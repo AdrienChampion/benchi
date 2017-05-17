@@ -1,0 +1,15 @@
+[package]
+name = "benchi"
+version = "0.1.0"
+authors = ["Adrien Champion <adrien.champion@email.com>"]
+
+[dependencies]
+ansi_term = "*"
+indicatif = "*"
+regex = "*"
+error-chain = "*"
+lazy_static = "*"
+
+[dependencies.nom]
+version = "^3.0"
+features = [ "regex", "regexp" ]
