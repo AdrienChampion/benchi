@@ -1,0 +1,5 @@
+prout blah {
+  // A comment.
+  short: prout// blah
+    cmd: "my program can go fast"
+}  

@@ -1,0 +1,14 @@
+prout blah {
+  // A comment.
+  short: prout// blah
+  graph: blah blah blah
+    cmd: "running my program
+          takes many lines
+          because of the many
+          options I like
+          to
+          give
+          to
+          my
+          program"
+}  

@@ -44,7 +44,7 @@ lazy_static!{
   ).unwrap() ;
 }
 static tmo_name: & str = "argument timeout" ;
-fn tmo_err(got: & str) -> ErrorKind {
+fn tmo_err(got: & str) -> Error {
   clap_err(
     tmo_name, format!("expected `{}`, got {}", tmo_format, got)
   )
@@ -55,7 +55,7 @@ fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
     if let Some(caps) = tmo_regex.captures(& arg) {
       debug_assert_eq!{ caps.len(), 3 }
 
-      let timeout = caps.get(1).ok_or(
+      caps.get(1).ok_or(
         tmo_err(& arg)
       ).and_then(
         |to| u64::from_str(
@@ -72,20 +72,19 @@ fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
             tmo_err(& arg)
           ).and_then(
             |unit| match unit.as_str() {
-              "min" => Ok( Duration::new(60 * num, 0) ),
-              "s" => Ok( Duration::new(num, 0) ),
+              "min" => {
+                * conf = Duration::new(60 * num, 0) ;
+                Ok(())
+              },
+              "s" => {
+                * conf = Duration::new(num, 0) ;
+                Ok(())
+              },
               _ => Err( tmo_err(& arg) ),
             }
           )
         }
-      ) ;
-
-      * conf = match timeout {
-        Ok(to) => to,
-        Err(e) => bail!(e),
-      } ;
-
-      Ok(())
+      )
 
     } else { bail!( tmo_err(& arg) ) }
   } else { bail!( tmo_err("nothing") ) }
@@ -97,7 +96,7 @@ fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
 
 
 static mode_name: & str = "option bench/tool mode" ;
-fn mode_err(got: & str) -> ErrorKind {
+fn mode_err(got: & str) -> Error {
   clap_err(
     mode_name, format!("expected `bench` or `tool`, got {}", got)
   )
@@ -109,22 +108,25 @@ fn mode_clap(
   
   'is_mode: while let Some(arg) = args.pop() {
     if arg == "//" {
-      let okay = args.pop().ok_or(
-        mode_err("nothing")
-      ).and_then(
-        |arg| match arg.as_str() {
-          "bench" => {
-            * file_par = true ;
-            Ok(())
-          },
-          "tool" => {
-            * tool_par = true ;
-            Ok(())
-          },
-          _ => Err( mode_err(& arg) ),
-        }
-      ) ;
-      if let Err(e) = okay { bail!(e) }
+
+      try!(
+        args.pop().ok_or(
+          mode_err("nothing")
+        ).and_then(
+          |arg| match arg.as_str() {
+            "bench" => {
+              * file_par = true ;
+              Ok(())
+            },
+            "tool" => {
+              * tool_par = true ;
+              Ok(())
+            },
+            _ => Err( mode_err(& arg) ),
+          }
+        )
+      )
+
     } else {
       args.push(arg) ;
       break 'is_mode
