@@ -17,12 +17,13 @@ extern crate lazy_static ;
 pub mod common ;
 pub mod clap ;
 pub mod parse ;
+pub mod run ;
 
 
 /// Errors.
 pub mod errors {
   use std::io::Write ;
-  use common::Conf ;
+  use common::* ;
 
   error_chain!{
     types {
@@ -49,6 +50,13 @@ pub mod errors {
           } else {
             format!(": {}", blah)
           }
+        )
+      }
+      #[doc = "Tool run error."]
+      ToolRun(tool: ToolConf, bench: String) {
+        description("error during tool run")
+        display(
+          "error while running tool {} on benchmark {}", tool.name, bench
         )
       }
     }
@@ -79,10 +87,15 @@ pub mod errors {
         try!( write!(w, "on {}", arg) ) ;
         if ! blah.is_empty() {
           writeln!(w, ": {}", blah)
-        } else { Ok(()) }
+        } else {
+          writeln!(w, "")
+        }
       },
       Io(ref e) => writeln!(
         w, "on IO: {}", conf.sad( format!("{}", e) )
+      ),
+      ToolRun(ref tool, ref bench) => write!(
+        w, "failure while running {} on {}", conf.emph(& tool.name), bench
       ),
     }
   }
@@ -103,8 +116,8 @@ pub mod errors {
     Ok(())
   }
 
-  /// Prints an error and exits.
-  pub fn print_err_exit(conf: Conf, err: Error) -> ! {
+  /// Prints an error and exits if `exit` is true.
+  pub fn print_err(conf: & Conf, err: Error, exit: bool) {
     let stderr = & mut ::std::io::stderr() ;
 
     if let Err(io_e) = write_err_exit(& conf, & err, stderr) {
@@ -130,7 +143,9 @@ pub mod errors {
       }
     }
 
-    ::std::process::exit(2)
+    if exit {
+      ::std::process::exit(2)
+    }
   }
 }
 
@@ -143,7 +158,7 @@ fn main() {
   match clap::work() {
     Ok(conf) => {
       println!("conf:") ;
-      println!("   file_par: {}", conf.file_par) ;
+      println!("  bench_par: {}", conf.bench_par) ;
       println!("   tool_par: {}", conf.tool_par) ;
       println!("    timeout: {}s", conf.timeout.as_secs()) ;
       println!("    out dir: {}", conf.out_dir) ;
@@ -151,12 +166,12 @@ fn main() {
       println!("") ;
       
       if let Err(e) = work(& conf) {
-        print_err_exit(conf, e)
+        print_err(& conf, e, true)
       } else {
         ::std::process::exit(0)
       }
     },
-    Err(e) => print_err_exit(Conf::default(), e)
+    Err(e) => print_err(& Conf::default(), e, true)
   }
 }
 
@@ -193,13 +208,7 @@ fn work(conf: & Conf) -> Res<()> {
     println!("  {} {{", conf.emph(tool_conf.name)) ;
     println!("    short: {}", conf.emph(tool_conf.short)) ;
     println!("    graph: {}", conf.emph(tool_conf.graph)) ;
-    print!(  "      cmd: ") ;
-    let mut iter = tool_conf.cmd.iter() ;
-    if let Some(line) = iter.next() { print!("{}", line) }
-    println!("") ;
-    for line in iter {
-      println!(  "           {}", line)
-    }
+    println!("      cmd: {}", conf.emph(tool_conf.cmd)) ;
     println!("  }}") ;
   }
 

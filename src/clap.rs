@@ -98,12 +98,19 @@ fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
 static mode_name: & str = "option bench/tool mode" ;
 fn mode_err(got: & str) -> Error {
   clap_err(
-    mode_name, format!("expected `bench` or `tool`, got {}", got)
+    mode_name, format!("expected `bench(<int>)` or `tool(<int>)`, got {}", got)
   )
+}
+lazy_static!{
+  static ref mode_regex: Regex = Regex::new(
+    r"(?x)^
+      ( bench|tool ) ( \(\d*\) )
+    $"
+  ).unwrap() ;
 }
 /// Mode parser.
 fn mode_clap(
-  args: & mut ArgVec, file_par: & mut bool, tool_par: & mut bool
+  args: & mut ArgVec, bench_par: & mut usize, tool_par: & mut usize
 ) -> Res<()> {
   
   'is_mode: while let Some(arg) = args.pop() {
@@ -113,17 +120,57 @@ fn mode_clap(
         args.pop().ok_or(
           mode_err("nothing")
         ).and_then(
-          |arg| match arg.as_str() {
-            "bench" => {
-              * file_par = true ;
-              Ok(())
-            },
-            "tool" => {
-              * tool_par = true ;
-              Ok(())
-            },
-            _ => Err( mode_err(& arg) ),
+          |arg| {
+            if let Some(caps) = mode_regex.captures(& arg) {
+              debug_assert_eq!{ caps.len(), 3 }
+
+              caps.get(2).ok_or(
+                tmo_err(& arg)
+              ).and_then(
+                |max| usize::from_str(
+                  max.as_str()
+                ).map_err(
+                  |e| clap_err(
+                    mode_name,
+                    format!("expected integer, got {} ({})", max.as_str(), e)
+                  )
+                )
+              ).and_then(
+                |max| {
+                  caps.get(1).ok_or(
+                    mode_err(& arg)
+                  ).and_then(
+                    |which| match which.as_str() {
+                      "bench" => {
+                        * bench_par = max ;
+                        Ok(())
+                      },
+                      "s" => {
+                        * tool_par = max ;
+                        Ok(())
+                      },
+                      _ => Err( mode_err(& arg) ),
+                    }
+                  )
+                }
+              )
+            } else {
+              Err( mode_err(& arg) )
+            }
           }
+
+
+          // |arg| match arg.as_str() {
+          //   "bench" => {
+          //     * bench_par = true ;
+          //     Ok(())
+          //   },
+          //   "tool" => {
+          //     * tool_par = true ;
+          //     Ok(())
+          //   },
+          //   _ => Err( mode_err(& arg) ),
+          // }
         )
       )
 
@@ -147,7 +194,7 @@ pub fn work() -> Res<Conf> {
 
   try!( timeout_clap(args, & mut conf.timeout) ) ;
 
-  try!( mode_clap(args, & mut conf.file_par, & mut conf.tool_par) ) ;
+  try!( mode_clap(args, & mut conf.bench_par, & mut conf.tool_par) ) ;
 
   if let Some(tool_file) = args.pop() {
 

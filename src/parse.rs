@@ -94,20 +94,6 @@ fn quoted_string<'a>(
   )
 }
 
-/// A tool configuration.
-pub struct ToolConf {
-  /// Tool name.
-  pub name: Spnd<String>,
-  /// Short name.
-  pub short: Spnd<String>,
-  /// Graph name.
-  pub graph: Spnd<String>,
-  /// Command (lines).
-  pub cmd: Spnd< Vec<String> >,
-  // /// Optional validator.
-  // pub validator: ()
-}
-
 /// Parses a tool configuration.
 fn tool_conf<'a>(
   bytes: & 'a [u8], cnt: usize
@@ -156,7 +142,19 @@ fn tool_conf<'a>(
       apply!(quoted_string, cnt + len),
       |cmd: Spnd< Vec<String> >| {
         len += cmd.len() ;
-        cmd
+        cmd.map(
+          |vec| {
+            let mut iter = vec.into_iter() ;
+            if let Some(mut s) = iter.next() {
+              for next in iter {
+                s = format!("{} {}", s, next)
+              }
+              s
+            } else {
+              "".into()
+            }
+          }
+        )
       }
     ) >>
     map!( opt_spc_cmt, |add| len += add ) >>
