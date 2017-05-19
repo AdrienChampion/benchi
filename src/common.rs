@@ -1,16 +1,73 @@
 //! Common types and functions used by `benchi`.
 
 use std::fmt ;
-use std::ops::{ Index, Deref } ;
+use std::ops::{ Index, IndexMut, Deref } ;
 
-
+pub use std::process::Command ;
+pub use std::fs::File ;
+pub use std::io::{ Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
-pub use std::path::Path ;
+pub use std::path::{ Path, PathBuf } ;
 pub use std::iter::Iterator ;
+pub use std::sync::Arc ;
 
 use ansi::{ Style, Colour } ;
 
+use errors::* ;
+
+/// Log macro, deactivated if `$conf`.quiet is `true`.
+macro_rules! log {
+
+  ( | internal | => ) => (()) ;
+
+  ( | internal | => ; $($tail:tt)* ) => (
+    log!(| internal | => $($tail)*)
+  ) ;
+
+  ( | internal | => let $p:pat = $e:expr ; $($tail:tt)* ) => ({
+    let $p = $e ;
+    log!(| internal | => $($tail)*)
+  }) ;
+
+  ( | internal | => { $($head:tt)+ } $($tail:tt)* ) => ({
+    { $($head)+ }
+    log!(| internal | => $($tail)*)
+  }) ;
+
+  ( | internal | => $($head:expr),* ; $($tail:tt)* ) => ({
+    println!($($head),*) ;
+    log!(| internal | => $($tail)*)
+  }) ;
+
+  (
+    $conf:expr => $($stuff:tt)+
+  ) => ({
+    if ! $conf.quiet {
+      log!( |internal| => $($stuff)+ ; )
+    }
+  }) ;
+}
+
+/// Opens a file in write mode.
+#[inline]
+pub fn open_file_writer<P: AsRef<Path>>(path: P) -> Res<File> {
+  ::std::fs::OpenOptions::new()
+  .write(true)
+  .create_new(true)
+  .open( path.as_ref() )
+  .map_err( |e| e.into() )
+}
+
+/// Creates a directory if not already there.
+#[inline]
+pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
+  ::std::fs::DirBuilder::new().recursive(true).create(path).map_err(
+    |e| e.into()
+  )
+}
+
 /// Configuration structure.
+#[derive(Debug)]
 pub struct Conf {
   /// Number of parallel bench runs.
   pub bench_par: usize,
@@ -22,6 +79,10 @@ pub struct Conf {
   pub out_dir: String,
   /// Tool configuration file.
   pub tool_file: String,
+  /// Benchmark file.
+  pub bench_file: String,
+  /// Quite mode?
+  pub quiet: bool,
   /// Emphasis style.
   emph: Style,
   /// Happy style.
@@ -40,6 +101,8 @@ impl Default for Conf {
       timeout: Duration::new(60, 0),
       out_dir: ".".into(),
       tool_file: "tools.conf".into(),
+      bench_file: "bench.file".into(),
+      quiet: false,
       emph: Style::new().bold(),
       hap: Colour::Green.normal(),
       sad: Colour::Yellow.normal(),
@@ -81,7 +144,7 @@ pub struct ToolConf {
   /// Graph name.
   pub graph: Spnd<String>,
   /// Command (lines).
-  pub cmd: Spnd<String>,
+  pub cmd: Spnd< Vec<String> >,
   // /// Optional validator.
   // pub validator: ()
 }
@@ -189,6 +252,16 @@ impl Instance {
   pub fn benchs(& self) -> BenchRange {
     BenchRange { current: 0, max: self.benchs.len() }
   }
+  /// Number of tools.
+  #[inline]
+  pub fn tool_len(& self) -> usize {
+    self.tools.len()
+  }
+  /// Number of benchs.
+  #[inline]
+  pub fn bench_len(& self) -> usize {
+    self.benchs.len()
+  }
   /// String of a bench.
   #[inline]
   pub fn str_of_bench(& self, index: BenchIndex) -> & str {
@@ -196,10 +269,10 @@ impl Instance {
   }
 }
 impl Index<BenchIndex> for Instance {
-  type Output = Path ;
+  type Output = String ;
   #[inline]
-  fn index(& self, index: BenchIndex) -> & Path {
-    Path::new( & self.benchs[* index] )
+  fn index(& self, index: BenchIndex) -> & String {
+    & self.benchs[* index]
   }
 }
 impl Index<ToolIndex> for Instance {
@@ -207,6 +280,40 @@ impl Index<ToolIndex> for Instance {
   #[inline]
   fn index(& self, index: ToolIndex) -> & ToolConf {
     & self.tools[* index]
+  }
+}
+
+/// Vector indexed by `ToolIndex`.
+pub struct ToolVec<T> {
+  /// The vector.
+  vec: Vec<T>,
+}
+impl<T> ToolVec<T> {
+  /// Creates a new vector.
+  #[inline]
+  pub fn with_capacity(n: usize) -> Self {
+    ToolVec { vec: Vec::with_capacity(n) }
+  }
+  /// Push.
+  #[inline]
+  pub fn push(& mut self, elem: T) {
+    self.vec.push(elem)
+  }
+  /// Pop.
+  #[inline]
+  pub fn pop(& mut self) -> Option<T> {
+    self.vec.pop()
+  }
+}
+impl<T> Index<ToolIndex> for ToolVec<T> {
+  type Output = T ;
+  fn index(& self, index: ToolIndex) -> & T {
+    & self.vec[* index]
+  }
+}
+impl<T> IndexMut<ToolIndex> for ToolVec<T> {
+  fn index_mut(& mut self, index: ToolIndex) -> & mut T {
+    & mut self.vec[* index]
   }
 }
 
@@ -262,10 +369,30 @@ impl<T> Spnd<T> {
   pub fn map<U, F: Fn(T) -> U>(self, f: F) -> Spnd<U> {
     Spnd { val: f(self.val), start: self.start, len: self.len }
   }
+  /// Changes the value.
+  #[inline]
+  pub fn replace(& mut self, val: T) {
+    self.val = val
+  }
 }
 impl<T> ::std::ops::Deref for Spnd<T> {
   type Target = T ;
   fn deref(& self) -> & T {
     & self.val
+  }
+}
+
+
+/// Extends `Duration`.
+pub trait DurationExt {
+  /// Time in seconds with microsecond precision as string.
+  #[inline]
+  fn as_sec_str(& self) -> String ;
+}
+impl DurationExt for Duration {
+  fn as_sec_str(& self) -> String {
+    format!(
+      "{}.{:0>6}", self.as_secs(), self.subsec_nanos() / 1_000u32
+    )
   }
 }

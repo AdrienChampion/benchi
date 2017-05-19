@@ -7,11 +7,28 @@ send to `BenchRun`s is that they're done.
 use common::* ;
 use errors::* ;
 
-pub use std::thread::spawn ;
-pub use std::sync::Arc ;
+pub use std::thread::{ spawn, sleep, JoinHandle } ;
+pub use std::process::{ Child, Command, Stdio, Output, ExitStatus } ;
 pub use std::sync::mpsc::{
   channel, Sender, Receiver, RecvError, TryRecvError
 } ;
+
+/// Kills a process from its pid.
+#[cfg(not(windows))]
+pub fn kill_process(pid: u32) {
+  let _ = Command::new("kill").arg("-9").arg(
+    format!("{}", pid)
+  ).output() ;
+}
+
+/// Kills a process from its pid.
+#[cfg(windows)]
+pub fn kill_process(pid: u32) {
+  let _ = Command::new("taskkill").arg("/t").arg("/pid").arg(
+    format!("{}", pid)
+  ).output() ;
+}
+
 
 /// Channel from master to bench runs.
 pub fn master_to_bench_channel() -> (
@@ -34,7 +51,7 @@ pub struct RunRes<T> {
   /// Bench index.
   pub bench: BenchIndex,
   /// Result.
-  pub res: Res<T>,
+  pub res: Res< Option<T> >,
 }
 /// Channel from tool runs to master.
 pub fn tool_to_master_channel<T>() -> (

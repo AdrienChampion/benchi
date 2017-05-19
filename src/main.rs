@@ -37,9 +37,11 @@ pub mod errors {
 
     errors {
       #[doc = "Unimplemented."]
-      Unimpl(blah: String) {
+      Unimpl(conf: Arc<Conf>, blah: String) {
         description("unimplemented feature")
-        display("{} is unimplemented", blah)
+        display(
+          "feature {} is {} yet", blah, conf.sad("not implemented")
+        )
       }
       #[doc = "Clap: argument name, error description."]
       Clap(arg: String, blah: String) {
@@ -53,10 +55,10 @@ pub mod errors {
         )
       }
       #[doc = "Tool run error."]
-      ToolRun(tool: ToolConf, bench: String) {
+      ToolRun(conf: Arc<Conf>, tool: ToolConf, bench: String) {
         description("error during tool run")
         display(
-          "error while running tool {} on benchmark {}", tool.name, bench
+          "failure while running {} on {}", conf.emph(& tool.name), bench
         )
       }
     }
@@ -71,35 +73,6 @@ pub mod errors {
     )
   }
 
-  /// Writes the top-most error as a single line with trailing `nl`.
-  fn writeln_top<W: Write>(
-    conf: & Conf, err: & Error, w: & mut W
-  ) -> ::std::io::Result<()> {
-    use self::ErrorKind::* ;
-    match * err.kind() {
-      Msg(ref blah) => writeln!(
-        w, "{}", blah
-      ),
-      Unimpl(ref blah) => writeln!(
-        w, "feature {} is {} yet", blah, conf.sad("not implemented")
-      ),
-      Clap(ref arg, ref blah) => {
-        try!( write!(w, "on {}", arg) ) ;
-        if ! blah.is_empty() {
-          writeln!(w, ": {}", blah)
-        } else {
-          writeln!(w, "")
-        }
-      },
-      Io(ref e) => writeln!(
-        w, "on IO: {}", conf.sad( format!("{}", e) )
-      ),
-      ToolRun(ref tool, ref bench) => write!(
-        w, "failure while running {} on {}", conf.emph(& tool.name), bench
-      ),
-    }
-  }
-
   /// Prints an error and exits.
   fn write_err_exit<W: Write>(
     conf: & Conf, err: & Error, w: & mut W
@@ -110,14 +83,15 @@ pub mod errors {
     try!{
       writeln!( w, "{}{}:", head, conf.bad("Error") )
     }
-    try!{ write!(w, "{}", indent) }
-    try!{ writeln_top(conf, err, w) }
+    for err in err.iter() {
+      try!{ writeln!(w, "{}{}", indent, err) }
+    }
     try!{ writeln!( w, "{}", head ) }
     Ok(())
   }
 
-  /// Prints an error and exits if `exit` is true.
-  pub fn print_err(conf: & Conf, err: Error, exit: bool) {
+  /// Prints an error.
+  pub fn print_one_err(conf: & Conf, err: Error) {
     let stderr = & mut ::std::io::stderr() ;
 
     if let Err(io_e) = write_err_exit(& conf, & err, stderr) {
@@ -135,14 +109,17 @@ pub mod errors {
         println!("> {}", io_e) ;
         println!("") ;
 
-        println!("Original error trace:") ;
-        for e in err.iter() {
-          println!("{} {}", conf.bad(">"), e)
-        }
-        println!("")
+        println!("{} Original error:", conf.bad("|===|")) ;
+        println!("{} {}", conf.bad("|"), err) ;
+        println!("{}", conf.bad("|===|"))
       }
     }
+  }
 
+
+  /// Prints an error and exits if `exit` is true.
+  pub fn print_err(conf: & Conf, err: Error, exit: bool) {
+    print_one_err(conf, err) ;
     if exit {
       ::std::process::exit(2)
     }
@@ -157,15 +134,9 @@ use errors::* ;
 fn main() {
   match clap::work() {
     Ok(conf) => {
-      println!("conf:") ;
-      println!("  bench_par: {}", conf.bench_par) ;
-      println!("   tool_par: {}", conf.tool_par) ;
-      println!("    timeout: {}s", conf.timeout.as_secs()) ;
-      println!("    out dir: {}", conf.out_dir) ;
-      println!("  tool file: {}", conf.tool_file) ;
-      println!("") ;
+      let conf = Arc::new(conf) ;
       
-      if let Err(e) = work(& conf) {
+      if let Err(e) = work( conf.clone() ) {
         print_err(& conf, e, true)
       } else {
         ::std::process::exit(0)
@@ -184,9 +155,17 @@ macro_rules! while_opening {
   }) ;
 }
 
-fn work(conf: & Conf) -> Res<()> {
-  use std::fs::File ;
+fn work(conf: Arc<Conf>) -> Res<()> {
   use std::io::Read ;
+
+  // Create output directory if it doesn't already exist.
+  try!(
+    mk_dir(& conf.out_dir).chain_err(
+      || format!(
+        "while creating output directory `{}`", conf.emph(& conf.out_dir)
+      )
+    )
+  ) ;
 
   let mut file = try!(
     File::open(& conf.tool_file).chain_err( while_opening!(conf) )
@@ -197,20 +176,79 @@ fn work(conf: & Conf) -> Res<()> {
   ) ;
 
   let tool_confs = try!(
-    ::parse::work(& buff)
+    ::parse::work(& conf, & buff)
   ) ;
 
-  println!(
-    "{} parsed tool configuration:", conf.happy("Successfully")
-  ) ;
-
-  for tool_conf in tool_confs {
-    println!("  {} {{", conf.emph(tool_conf.name)) ;
-    println!("    short: {}", conf.emph(tool_conf.short)) ;
-    println!("    graph: {}", conf.emph(tool_conf.graph)) ;
-    println!("      cmd: {}", conf.emph(tool_conf.cmd)) ;
-    println!("  }}") ;
+  // Make sure names are unique.
+  {
+    let mut tool_iter = tool_confs.iter() ;
+    while let Some(tool_a) = tool_iter.next() {
+      let other_tools = tool_iter.clone() ;
+      for tool_b in other_tools {
+        if tool_a.name.get() == tool_b.name.get() {
+          bail!(
+            "two of the tools have the same name `{}`",
+            conf.bad(& tool_a.name),
+          )
+        }
+        if tool_a.short.get() == tool_b.short.get() {
+          bail!(
+            "tools `{}` and `{}` have the same short name `{}`",
+            conf.emph(& tool_a.name),
+            conf.emph(& tool_b.name),
+            conf.bad(& tool_a.short),
+          )
+        }
+        if tool_a.graph.get() == tool_b.graph.get() {
+          bail!(
+            "tools `{}` and `{}` have the same graph name `{}`",
+            conf.emph(& tool_a.name),
+            conf.emph(& tool_b.name),
+            conf.bad(& tool_a.graph),
+          )
+        }
+      }
+    }
   }
+
+  let benchs = {
+
+    let buff_read = try!(
+      File::open(& conf.bench_file).map(
+        |file| BufReader::new(file)
+      )
+    ) ;
+    let mut benchs = Vec::with_capacity( 200 ) ;
+
+    for maybe_line in buff_read.lines() {
+      benchs.push( try!(maybe_line) )
+    }
+    benchs
+  } ;
+
+  let instance = Instance::mk(tool_confs, benchs) ;
+
+  log!(
+    conf =>
+      "Running {} tools on {} benchmarks...",
+      instance.tool_len(), instance.bench_len()
+  ) ;
+
+  let instance = Arc::new( instance ) ;
+
+  let master = try!(
+    run::Master::mk(conf.clone(), instance.clone())
+  ) ;
+
+  let time = try!( master.run() ) ;
+
+  log!(
+    conf =>
+      let time = format!(
+        "{}.{}", time.as_secs(), time.subsec_nanos() / 1_000_000u32
+      ) ;
+      "Done in {}s", conf.emph(& time)
+  ) ;
 
   Ok(())
 }

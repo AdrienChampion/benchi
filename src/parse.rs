@@ -2,6 +2,7 @@
 
 use std::str::from_utf8 ;
 
+use regex::Regex ;
 use nom::{ IResult, multispace } ;
 
 use common::* ;
@@ -63,7 +64,7 @@ fn string<'a>(
     bytes,
     re_bytes_find!(r#"^[^\n{}"/]+"#),
     |bytes: & 'a [u8]| from_utf8(bytes).map(
-      |s: & 'a str| ( Spnd::mk(s.to_string(), cnt, bytes.len()) )
+      |s: & 'a str| ( Spnd::mk(s.trim().to_string(), cnt, bytes.len()) )
     )
   )
 }
@@ -149,9 +150,9 @@ fn tool_conf<'a>(
               for next in iter {
                 s = format!("{} {}", s, next)
               }
-              s
+              vec![s]
             } else {
-              "".into()
+              vec![]
             }
           }
         )
@@ -174,7 +175,7 @@ fn tool_confs<'a>(
   let mut cnt = 0 ;
   do_parse!(
     bytes,
-    dbg_dmp!( map!( opt_spc_cmt, |add| cnt += add ) ) >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
       terminated!(
         map!(
@@ -187,13 +188,49 @@ fn tool_confs<'a>(
   )
 }
 
+
+lazy_static!{
+  static ref cmd_regex: Regex = Regex::new(
+    r"([^\s]*)"
+  ).unwrap() ;
+}
+
 /// Parses tool configurations from some bytes.
-pub fn work<'a>(bytes: & 'a [u8]) -> Res<
+pub fn work<'a>(conf: & Arc<Conf>, bytes: & 'a [u8]) -> Res<
   Vec< ToolConf >
 > {
   match tool_confs(bytes) {
-    IResult::Done(rest, res) => {
+    IResult::Done(rest, mut res) => {
       if rest.is_empty() {
+        for tool_conf in res.iter_mut() {
+          if tool_conf.cmd.is_empty() {
+            bail!(
+              format!(
+                "command for tool {} is empty", conf.emph(& tool_conf.name)
+              )
+            )
+          }
+          let cmd = {
+            let mut cmd = vec![] ;
+            assert_eq!(tool_conf.cmd.get().len(), 1) ;
+            let str_cmd = & tool_conf.cmd[0] ;
+            let mut iter = cmd_regex.find_iter(str_cmd) ;
+            if let Some(first) = iter.next() {
+              cmd.push( first.as_str().to_string() ) ;
+              for next in iter {
+                cmd.push( next.as_str().to_string() )
+              }
+            } else {
+              bail!(
+                format!(
+                  "command for tool {} is illegal", conf.emph(& tool_conf.name)
+                )
+              )
+            }
+            cmd
+          } ;
+          tool_conf.cmd.replace(cmd)
+        }
         Ok(res)
       } else {
         bail!("conf file parse error: could not parse whole file")

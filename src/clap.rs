@@ -95,16 +95,16 @@ fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
 
 
 
-static mode_name: & str = "option bench/tool mode" ;
+static mode_name: & str = "option for parallel benchs/tools" ;
 fn mode_err(got: & str) -> Error {
   clap_err(
-    mode_name, format!("expected `bench(<int>)` or `tool(<int>)`, got {}", got)
+    mode_name, format!("expected `benchs.<int>` or `tools.<int>`, got {}", got)
   )
 }
 lazy_static!{
   static ref mode_regex: Regex = Regex::new(
     r"(?x)^
-      ( bench|tool ) ( \(\d*\) )
+      ( benchs|tools ) \. ( [\d]* )
     $"
   ).unwrap() ;
 }
@@ -141,11 +141,11 @@ fn mode_clap(
                     mode_err(& arg)
                   ).and_then(
                     |which| match which.as_str() {
-                      "bench" => {
+                      "benchs" => {
                         * bench_par = max ;
                         Ok(())
                       },
-                      "s" => {
+                      "tools" => {
                         * tool_par = max ;
                         Ok(())
                       },
@@ -184,13 +184,56 @@ fn mode_clap(
 }
 
 
+/// Option parser.
+fn option_clap(
+  args: & mut ArgVec, conf: & mut Conf
+) -> Res<()> {
+  'work: while let Some(arg) = args.pop() {
+    if arg.chars().next().unwrap() != '-' {
+      // Not an option.
+      args.push(arg) ;
+      break 'work
+    }
+
+    match & arg as & str {
+
+      // Quiet.
+      "-q" => conf.quiet = true,
+
+      // Output directory.
+      "-o" => if let Some(arg) = args.pop() {
+        conf.out_dir = arg
+      } else {
+        bail!(
+          clap_err("option for output directory", "got nothing")
+        )
+      },
+
+      // Unknown.
+      s => bail!(
+        clap_err(
+          format!("unknown option `{}`", conf.emph(s)),
+          ""
+        )
+      ),
+    }
+  }
+
+  Ok(())
+}
+
+
+
 static tool_file_name: & str = "tool file argument" ;
+static bench_file_name: & str = "bench file argument" ;
 /// Parses all arguments.
 pub fn work() -> Res<Conf> {
   let args = & mut ArgVec::mk() ;
   let mut conf = Conf::default() ;
   // First argument's name of the binary.
   let _ = args.pop() ;
+
+  try!( option_clap(args, & mut conf) ) ;
 
   try!( timeout_clap(args, & mut conf.timeout) ) ;
 
@@ -216,6 +259,33 @@ pub fn work() -> Res<Conf> {
       }
     }
     conf.tool_file = tool_file ;
+
+  } else {
+    bail!(
+      clap_err(tool_file_name, "none provided")
+    )
+  }
+
+  if let Some(bench_file) = args.pop() {
+
+    {
+      let path = Path::new(& bench_file) ;
+      if ! path.exists() {
+        bail!(
+          clap_err(
+            bench_file_name, format!("file `{}` does not exist", bench_file)
+          )
+        )
+      }
+      if ! path.is_file() {
+        bail!(
+          clap_err(
+            bench_file_name, format!("`{}` is a directory", bench_file)
+          )
+        )
+      }
+    }
+    conf.bench_file = bench_file ;
 
   } else {
     bail!(

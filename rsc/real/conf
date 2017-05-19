@@ -1,0 +1,9 @@
+find 1 {
+  short: find_1
+  cmd: "find / -name"
+}
+
+find 2 {
+  short: find_2
+  cmd: "find ~/ -name"
+}

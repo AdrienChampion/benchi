@@ -10,13 +10,19 @@ tool to run to `ToolRun`s.
   run
 */
 
-use std::process::Command ;
-
 use common::* ;
 use errors::* ;
 
 pub mod para ;
 use self::para::* ;
+
+enum Run {
+  Id(u32),
+  Done(
+    ::std::io::Result<::std::process::Output>,
+    Duration
+  ),
+}
 
 /// Lowest level in the hierarchy, runs a tool on a benchmark.
 pub struct ToolRun {
@@ -27,7 +33,7 @@ pub struct ToolRun {
   /// Index of this tool run for the bench run responsible for it.
   index: usize,
   /// Sender to master.
-  master: Sender< RunRes<Duration> >,
+  master: Sender< RunRes<(Duration, Output)> >,
   /// Sender to bench run.
   bench_run: Sender< usize >,
   /// Receiver from bench run.
@@ -39,7 +45,7 @@ impl ToolRun {
   #[inline]
   fn mk(
     conf: Arc<Conf>, instance: Arc<Instance>, index: usize,
-    master: Sender< RunRes<Duration> >,
+    master: Sender< RunRes<(Duration, Output)> >,
     bench_run: Sender< usize >,
     from_bench_run: Receiver< (ToolIndex, BenchIndex) >,
   ) -> Self {
@@ -80,24 +86,99 @@ impl ToolRun {
   /// Runs a tool on a bench.
   fn run(
     & self, tool_idx: ToolIndex, bench_idx: BenchIndex
-  ) -> Res<Duration> {
-    let bench = & self.instance[bench_idx] ;
-    let cmd = self.instance[tool_idx].cmd.get() ;
+  ) -> Res< Option<(Duration, Output)> > {
+    let bench = self.instance[bench_idx].clone() ;
+    let vec_cmd = & self.instance[tool_idx].cmd ;
+    let kid_cmd = vec_cmd.clone() ;
 
-    let mut cmd = Command::new(cmd) ;
-    cmd.arg(bench) ;
+    assert!( vec_cmd.len() > 0 ) ;
 
+    // Command will be ran asynchonously for timeouts.
+    let (sender, recver) = channel() ;
+
+    spawn(
+      move || {
+        let mut cmd = Command::new(& kid_cmd[0]) ;
+        for arg in & kid_cmd[1..] {
+          cmd.arg(arg) ;
+        }
+        cmd.arg(bench) ;
+        cmd.stdin( Stdio::null() ) ;
+        cmd.stdout( Stdio::piped() ) ;
+        cmd.stderr( Stdio::piped() ) ;
+        let start = Instant::now() ;
+        let child = cmd.spawn().unwrap() ;
+        let _ = sender.send( Run::Id(child.id()) ) ;
+        let output = child.wait_with_output() ;
+        // .map(
+        //   |out| (out.status, out.stdout, out.stderr)
+        // ) ;
+        let time = Instant::now() - start ;
+        let _ = sender.send( Run::Done(output, time) ) ;
+        ()
+      }
+    ) ;
     let start = Instant::now() ;
-    let output = cmd.output() ;
-    let time = Instant::now() - start ;
-    output.chain_err(
-      || ErrorKind::ToolRun(
-        self.instance[tool_idx].clone(),
-        self.instance.str_of_bench(bench_idx).into()
-      )
-    ).map(
-      |_| time
-    )
+    
+    let mut kid_id = None ;
+
+    'receiving: loop {
+
+      // Is the kid done?
+      match recver.try_recv() {
+        Ok( Run::Id(id) ) => {
+          kid_id = Some(id) ;
+          continue 'receiving
+        },
+        // Done.
+        Ok( Run::Done(output, time) ) => {
+          return output.chain_err(
+            || {
+              let mut s = format!("running command") ;
+              for arg in vec_cmd.iter() {
+                s = format!("{} {}", s, arg)
+              }
+              s
+            }
+          ).chain_err(
+            || ErrorKind::ToolRun(
+              self.conf.clone(),
+              self.instance[tool_idx].clone(),
+              self.instance.str_of_bench(bench_idx).into()
+            )
+          ).map(
+            |out| if time > self.conf.timeout {
+              None
+            } else {
+              Some( (time, out) )
+            }
+          )
+        },
+
+        // Not yet...
+        Err(TryRecvError::Empty) => (),
+
+        // This should not happen.
+        Err(TryRecvError::Disconnected) => bail!({
+          let mut s = format!("disconnect from kid running command") ;
+          for arg in vec_cmd.iter() {
+            s = format!("{} {}", s, arg)
+          }
+          s
+        }),
+      }
+
+      // Timeout reached?
+      if Instant::now() - start > self.conf.timeout {
+        if let Some(id) = kid_id {
+          kill_process(id)
+        }
+        return Ok(None)
+      }
+
+      // Wait a 500ms to avoid burning cpu.
+      sleep( Duration::from_millis(500) )
+    }
   }
 }
 
@@ -130,7 +211,7 @@ impl BenchRun {
     conf: Arc<Conf>, instance: Arc<Instance>, index: usize,
     master: Sender< Res<usize> >,
     from_master: Receiver< BenchIndex >,
-    tool_to_master: Sender< RunRes<Duration> >,
+    tool_to_master: Sender< RunRes<(Duration, Output)> >,
   ) -> Self {
     let mut tool_runs = Vec::with_capacity( conf.tool_par ) ;
     // Channel to `self`, shared by all tool runs.
@@ -233,11 +314,13 @@ pub struct Master {
   /// Receiver from bench runs (intermediary level).
   from_bench_runs: Receiver< Res<usize> >,
   /// Receiver from tool runs (lowest level).
-  from_tool_runs: Receiver< RunRes<Duration> >,
+  from_tool_runs: Receiver< RunRes<(Duration, Output)> >,
+  /// Files in write mode to write the results to.
+  tool_files: ToolVec<File>,
 }
 impl Master {
   /// Creates (but does not run) a master.
-  pub fn mk(conf: Arc<Conf>, instance: Arc<Instance>) -> Self {
+  pub fn mk(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<Self> {
     let mut bench_runs = Vec::with_capacity(conf.bench_par) ;
     // Channel to `self` shared by all **tool runs**.
     let (t2m_s, from_tool_runs) = tool_to_master_channel() ;
@@ -260,12 +343,34 @@ impl Master {
       ()
     }
 
-    Master {
-      conf, instance,
-      bench_runs,
-      from_tool_runs,
-      from_bench_runs,
+    let mut tool_files = ToolVec::with_capacity( instance.tool_len() ) ;
+    // Open output files.
+    for tool in instance.tools() {
+      let mut path = PathBuf::new() ;
+      path.push(& conf.out_dir) ;
+      path.push( format!("{}.data", instance[tool].short) ) ;
+      tool_files.push(
+        try!(
+          open_file_writer( path.as_path() ).chain_err(
+            || format!(
+              "while creating file `{}`, data file for `{}`",
+              conf.sad( path.to_str().unwrap() ),
+              conf.emph( & instance[tool].name )
+            )
+          )
+        )
+      )
     }
+
+    Ok(
+      Master {
+        conf, instance,
+        bench_runs,
+        from_tool_runs,
+        from_bench_runs,
+        tool_files,
+      }
+    )
   }
 
   /// Launches the listen/dispatch loop.
@@ -317,10 +422,11 @@ impl Master {
         // Only reachable if no bench run's ready.
 
         // A failure here is fatal.
-        let all_dead = self.recv_results() ;
+        let all_dead = try!( self.recv_results() ) ;
         if all_dead {
           bail!("no more tool runs alive, but there's still benchs to run")
         }
+        sleep( Duration::from_millis(500) )
 
       }
 
@@ -339,17 +445,17 @@ impl Master {
     // we will be done.
 
     // Consume all remaining results.
-    while ! self.recv_results() {
-      //    ^^^^^all^dead^^^^^^
+    while ! try!( self.recv_results() ) {
+      //          ^^^^^all^dead^^^^^^
       // Sleep for 500 ms to avoid burning CPU.
-      ::std::thread::sleep( Duration::new(0, 500_000_000) )
+      sleep( Duration::from_millis(500) )
     }
 
     Ok(Instant::now() - start)
   }
 
   /// Receives some results from the tool runs. Returns `true` if disconnected.
-  fn recv_results(& self) -> bool {
+  fn recv_results(& mut self) -> Res<bool> {
     'recv: loop {
       match self.from_tool_runs.try_recv() {
         Ok( RunRes { tool, bench, res } ) => {
@@ -360,20 +466,88 @@ impl Master {
               self.conf.emph( self.instance.str_of_bench(bench) )
             )
           ) {
-            Ok(time) => {
-              println!(
-                "{} {} {}",
-                self.conf.happy("|===|"), self.instance[tool].name,
-                self.conf.emph( self.instance.str_of_bench(bench) )
+            Ok(None) => try!(
+              writeln!(
+                & mut self.tool_files[tool],
+                "{} {}", self.instance.str_of_bench(bench),
+                format!("timeout({})", self.conf.timeout.as_sec_str())
+              ).chain_err(
+                || format!(
+                  "while writing result of {} running on {}",
+                  self.conf.emph( & self.instance[tool].name ),
+                  self.conf.emph( self.instance.str_of_bench(bench) )
+                )
+              )
+            ),
+            Ok( Some((time, output)) ) => {
+              if ! output.stderr.is_empty() {
+                let mut path = PathBuf::new() ;
+                path.push( & self.conf.out_dir ) ;
+                path.push( & * self.instance[tool].short ) ;
+                path.push( "err" ) ;
+                try!(
+                  mk_dir(& path).chain_err(
+                    || format!(
+                      "while creating error directoryfor {}",
+                      self.conf.emph( & self.instance[tool].name )
+                    )
+                  )
+                ) ;
+                path.push( self.instance.str_of_bench(bench) ) ;
+                let mut file = try!(
+                  open_file_writer(path).chain_err(
+                    || format!(
+                      "while opening error file to write stderr \
+                      of {} running on {}",
+                      self.conf.emph( & self.instance[tool].name ),
+                      self.conf.emph( self.instance.str_of_bench(bench) )
+                    )
+                  )
+                ) ;
+                try!(
+                  file.write_all(& output.stderr).chain_err(
+                    || format!(
+                      "while writing stderr of {} running on {}",
+                      self.conf.emph( & self.instance[tool].name ),
+                      self.conf.emph( self.instance.str_of_bench(bench) )
+                    )
+                  )
+                )
+              }
+              let res = if ! (
+                output.stderr.is_empty() && output.status.success()
+              ) {
+                "error".to_string()
+              } else {
+                time.as_sec_str()
+              } ;
+              try!(
+                writeln!(
+                  & mut self.tool_files[tool],
+                  "{} {}", self.instance.str_of_bench(bench), res
+                ).chain_err(
+                  || format!(
+                    "while writing result of {} running on {}",
+                    self.conf.emph( & self.instance[tool].name ),
+                    self.conf.emph( self.instance.str_of_bench(bench) )
+                  )
+                )
               ) ;
-              let time = format!(
-                "{}.{}", time.as_secs(), time.subsec_nanos() / 1_000_000u32
-              ) ;
-              println!(
-                "{} done in {}", self.conf.happy("|"), self.conf.emph(& time)
-              ) ;
-              println!( "{}", self.conf.happy("|===|") ) ;
-              println!("")
+              // let time = res.map(
+              //   |(time, _)| format!(
+              //     "{}.{:0>6}", time.as_secs(), time.subsec_nanos() / 1_000u32
+              //   )
+              // ).unwrap_or("timeout".to_string()) ;
+              // println!(
+              //   "{} {} {}",
+              //   self.conf.happy("|===|"), self.instance[tool].name,
+              //   self.conf.emph( self.instance.str_of_bench(bench) )
+              // ) ;
+              // println!(
+              //   "{} done in {}", self.conf.happy("|"), self.conf.emph(& time)
+              // ) ;
+              // println!( "{}", self.conf.happy("|===|") ) ;
+              // println!("")
             },
             Err(e) => {
               print_err(& * self.conf, e, false) ;
@@ -382,9 +556,9 @@ impl Master {
           }
         },
         Err( TryRecvError::Empty ) => break 'recv,
-        Err( TryRecvError::Disconnected ) => return true,
+        Err( TryRecvError::Disconnected ) => return Ok(true),
       }
     }
-    false
+    Ok(false)
   }
 }
