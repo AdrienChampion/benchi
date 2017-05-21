@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["Adrien Champion <adrien.champion@email.com>"]
 
 [dependencies]
+clap = "*"
 ansi_term = "*"
-indicatif = "*"
+pbr = "*"
 regex = "*"
 error-chain = "*"
 lazy_static = "*"

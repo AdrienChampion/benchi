@@ -3,7 +3,9 @@
 #![forbid(missing_docs)]
 #![allow(non_upper_case_globals)]
 
-extern crate indicatif ;
+#[macro_use]
+extern crate clap as new_clap ;
+extern crate pbr ;
 extern crate ansi_term as ansi ;
 extern crate regex ;
 #[macro_use]
@@ -18,6 +20,10 @@ pub mod common ;
 pub mod clap ;
 pub mod parse ;
 pub mod run ;
+
+
+use common::* ;
+use errors::* ;
 
 
 /// Errors.
@@ -127,24 +133,6 @@ pub mod errors {
 }
 
 
-use common::* ;
-use errors::* ;
-
-/// Entry point.
-fn main() {
-  match clap::work() {
-    Ok(conf) => {
-      let conf = Arc::new(conf) ;
-      
-      if let Err(e) = work( conf.clone() ) {
-        print_err(& conf, e, true)
-      } else {
-        ::std::process::exit(0)
-      }
-    },
-    Err(e) => print_err(& Conf::default(), e, true)
-  }
-}
 
 macro_rules! while_opening {
   ($conf:expr) => ({
@@ -155,7 +143,43 @@ macro_rules! while_opening {
   }) ;
 }
 
-fn work(conf: Arc<Conf>) -> Res<()> {
+
+
+
+
+
+
+/// Entry point.
+fn main() {
+
+  match clap::work() {
+    Ok(mut conf) => {
+
+      let instance = match load_instance(& mut conf) {
+        Ok(instance) => instance,
+        Err(e) => {
+          print_err(& conf, e, true) ;
+          unreachable!()
+        },
+      } ;
+
+      let (conf, instance) = (
+        Arc::new(conf), Arc::new(instance)
+      ) ;
+      
+      if let Err(e) = work( conf.clone(), instance.clone() ) {
+        print_err(& conf, e, true)
+      } else {
+        ::std::process::exit(0)
+      }
+    },
+    Err(e) => print_err(& Conf::default(), e, true)
+  }
+}
+
+
+
+fn load_instance(conf: & mut Conf) -> Res<Instance> {
   use std::io::Read ;
 
   // Create output directory if it doesn't already exist.
@@ -176,7 +200,7 @@ fn work(conf: Arc<Conf>) -> Res<()> {
   ) ;
 
   let tool_confs = try!(
-    ::parse::work(& conf, & buff)
+    ::parse::work(conf, & buff)
   ) ;
 
   // Make sure names are unique.
@@ -228,16 +252,27 @@ fn work(conf: Arc<Conf>) -> Res<()> {
 
   let instance = Instance::mk(tool_confs, benchs) ;
 
+  if instance.tool_len() < conf.tool_par {
+    conf.tool_par = instance.tool_len()
+  }
+  if instance.bench_len() < conf.bench_par {
+    conf.bench_par = instance.bench_len()
+  }
+
   log!(
     conf =>
       "Running {} tools on {} benchmarks...",
       instance.tool_len(), instance.bench_len()
   ) ;
 
-  let instance = Arc::new( instance ) ;
+  Ok(instance)
+}
 
+
+
+fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
   let master = try!(
-    run::Master::mk(conf.clone(), instance.clone())
+    run::Master::mk(conf.clone(), instance)
   ) ;
 
   let time = try!( master.run() ) ;

@@ -86,7 +86,7 @@ impl ToolRun {
   /// Runs a tool on a bench.
   fn run(
     & self, tool_idx: ToolIndex, bench_idx: BenchIndex
-  ) -> Res< Option<(Duration, Output)> > {
+  ) -> Res< (Duration, Output) > {
     let bench = self.instance[bench_idx].clone() ;
     let vec_cmd = & self.instance[tool_idx].cmd ;
     let kid_cmd = vec_cmd.clone() ;
@@ -107,7 +107,7 @@ impl ToolRun {
         cmd.stdout( Stdio::piped() ) ;
         cmd.stderr( Stdio::piped() ) ;
         let start = Instant::now() ;
-        let child = cmd.spawn().unwrap() ;
+        let child = cmd.spawn().expect("error spawning command") ;
         let _ = sender.send( Run::Id(child.id()) ) ;
         let output = child.wait_with_output() ;
         // .map(
@@ -147,11 +147,7 @@ impl ToolRun {
               self.instance.str_of_bench(bench_idx).into()
             )
           ).map(
-            |out| if time > self.conf.timeout {
-              None
-            } else {
-              Some( (time, out) )
-            }
+            |out| (time, out)
           )
         },
 
@@ -173,11 +169,11 @@ impl ToolRun {
         if let Some(id) = kid_id {
           kill_process(id)
         }
-        return Ok(None)
+        continue 'receiving
       }
 
-      // Wait a 500ms to avoid burning cpu.
-      sleep( Duration::from_millis(500) )
+      // Wait a 100ms to avoid burning cpu.
+      sleep( Duration::from_millis(100) )
     }
   }
 }
@@ -317,6 +313,9 @@ pub struct Master {
   from_tool_runs: Receiver< RunRes<(Duration, Output)> >,
   /// Files in write mode to write the results to.
   tool_files: ToolVec<File>,
+  /// Progress bar.
+  bar: Option< ProgressBar< ::std::io::Stdout >,
+  >,
 }
 impl Master {
   /// Creates (but does not run) a master.
@@ -343,6 +342,18 @@ impl Master {
       ()
     }
 
+    let bar = if conf.quiet { None } else {
+      let mut bar = ProgressBar::new(
+        (instance.tool_len() as u64) * (instance.bench_len() as u64)
+      ) ;
+      bar.format("|##-|") ;
+      bar.tick_format("\\|/-") ;
+      bar.show_time_left = false ;
+      bar.show_speed = false ;
+      bar.show_tick = true ;
+      Some(bar)
+    } ;
+
     let mut tool_files = ToolVec::with_capacity( instance.tool_len() ) ;
     // Open output files.
     for tool in instance.tools() {
@@ -354,7 +365,9 @@ impl Master {
           open_file_writer( path.as_path() ).chain_err(
             || format!(
               "while creating file `{}`, data file for `{}`",
-              conf.sad( path.to_str().unwrap() ),
+              conf.sad(
+                path.to_str().expect("non-UTF8 path")
+              ),
               conf.emph( & instance[tool].name )
             )
           )
@@ -369,12 +382,18 @@ impl Master {
         from_tool_runs,
         from_bench_runs,
         tool_files,
+        bar,
       }
     )
   }
 
   /// Launches the listen/dispatch loop.
   pub fn run(mut self) -> Res<Duration> {
+    self.internal_run()
+  }
+
+  /// Launches the listen/dispatch loop.
+  fn internal_run(& mut self) -> Res<Duration> {
     let start = Instant::now() ;
     'dispatch_bench: for bench in self.instance.benchs() {
 
@@ -426,7 +445,7 @@ impl Master {
         if all_dead {
           bail!("no more tool runs alive, but there's still benchs to run")
         }
-        sleep( Duration::from_millis(500) )
+        sleep( Duration::from_millis(100) )
 
       }
 
@@ -447,8 +466,8 @@ impl Master {
     // Consume all remaining results.
     while ! try!( self.recv_results() ) {
       //          ^^^^^all^dead^^^^^^
-      // Sleep for 500 ms to avoid burning CPU.
-      sleep( Duration::from_millis(500) )
+      // Sleep for 100 ms to avoid burning CPU.
+      sleep( Duration::from_millis(100) )
     }
 
     Ok(Instant::now() - start)
@@ -459,6 +478,7 @@ impl Master {
     'recv: loop {
       match self.from_tool_runs.try_recv() {
         Ok( RunRes { tool, bench, res } ) => {
+          self.bar.as_mut().map( |b| b.inc() ) ;
           match res.chain_err(
             || format!(
               "while running {} on {}",
@@ -466,55 +486,31 @@ impl Master {
               self.conf.emph( self.instance.str_of_bench(bench) )
             )
           ) {
-            Ok(None) => try!(
-              writeln!(
-                & mut self.tool_files[tool],
-                "{} {}", self.instance.str_of_bench(bench),
-                format!("timeout({})", self.conf.timeout.as_sec_str())
-              ).chain_err(
-                || format!(
-                  "while writing result of {} running on {}",
-                  self.conf.emph( & self.instance[tool].name ),
-                  self.conf.emph( self.instance.str_of_bench(bench) )
-                )
-              )
-            ),
-            Ok( Some((time, output)) ) => {
+            // Ok(None) => try!(
+            //   writeln!(
+            //     & mut self.tool_files[tool],
+            //     "{} {}", self.instance.str_of_bench(bench),
+            //     format!("timeout({})", self.conf.timeout.as_sec_str())
+            //   ).chain_err(
+            //     || format!(
+            //       "while writing result of {} running on {}",
+            //       self.conf.emph( & self.instance[tool].name ),
+            //       self.conf.emph( self.instance.str_of_bench(bench) )
+            //     )
+            //   )
+            // ),
+            Ok( (time, output) ) => {
               if ! output.stderr.is_empty() {
-                let mut path = PathBuf::new() ;
-                path.push( & self.conf.out_dir ) ;
-                path.push( & * self.instance[tool].short ) ;
-                path.push( "err" ) ;
-                try!(
-                  mk_dir(& path).chain_err(
-                    || format!(
-                      "while creating error directoryfor {}",
-                      self.conf.emph( & self.instance[tool].name )
-                    )
-                  )
-                ) ;
-                path.push( self.instance.str_of_bench(bench) ) ;
-                let mut file = try!(
-                  open_file_writer(path).chain_err(
-                    || format!(
-                      "while opening error file to write stderr \
-                      of {} running on {}",
-                      self.conf.emph( & self.instance[tool].name ),
-                      self.conf.emph( self.instance.str_of_bench(bench) )
-                    )
-                  )
-                ) ;
-                try!(
-                  file.write_all(& output.stderr).chain_err(
-                    || format!(
-                      "while writing stderr of {} running on {}",
-                      self.conf.emph( & self.instance[tool].name ),
-                      self.conf.emph( self.instance.str_of_bench(bench) )
-                    )
-                  )
-                )
+                try!( self.dump_stderr(tool, bench, & output) ) ;
+                try!( self.dump_stdout(tool, bench, & output) )
+              } else {
+                if self.conf.log_output {
+                  try!( self.dump_stdout(tool, bench, & output) )
+                }
               }
-              let res = if ! (
+              let res = if time > self.conf.timeout {
+                format!( "timeout({})", self.conf.timeout.as_sec_str() )
+              } else if ! (
                 output.stderr.is_empty() && output.status.success()
               ) {
                 "error".to_string()
@@ -555,10 +551,94 @@ impl Master {
             },
           }
         },
-        Err( TryRecvError::Empty ) => break 'recv,
-        Err( TryRecvError::Disconnected ) => return Ok(true),
+        Err( TryRecvError::Empty ) => {
+          self.bar.as_mut().map( |b| b.tick() ) ;
+          break 'recv
+        },
+        Err( TryRecvError::Disconnected ) => {
+          self.bar.as_mut().map( |b| b.tick() ) ;
+          return Ok(true)
+        },
       }
     }
     Ok(false)
   }
+
+  /// Creates the error path of a tool.
+  #[inline]
+  pub fn mk_err_dir(& self, tool: ToolIndex) -> Res<PathBuf> {
+    let mut path = PathBuf::from( & self.conf.out_dir ) ;
+    path.push( self.instance[tool].short.get() ) ;
+    path.push("err") ;
+    mk_dir(& path).chain_err(
+      || format!(
+        "while creating err directory for {}",
+        self.conf.emph( & self.instance[tool].name )
+      )
+    ).map(|()| path)
+  }
+  /// Creates the output path of a tool.
+  #[inline]
+  pub fn mk_out_dir(& self, tool: ToolIndex) -> Res<PathBuf> {
+    let mut path = PathBuf::from( & self.conf.out_dir ) ;
+    path.push( self.instance[tool].short.get() ) ;
+    path.push("out") ;
+    mk_dir(& path).chain_err(
+      || format!(
+        "while creating output directory for {}",
+        self.conf.emph( & self.instance[tool].name )
+      )
+    ).map(|_| path)
+  }
+
+  /// Dumps the stderr of some output for a tool on a benchmark.
+  fn dump_stderr(
+    & self, tool: ToolIndex, bench: BenchIndex, output: & Output
+  ) -> Res<()> {
+    let mut path = try!( self.mk_err_dir(tool) ) ;
+    path.push( self.instance.str_of_bench(bench) ) ;
+    let mut file = try!(
+      open_file_writer(path).chain_err(
+        || format!(
+          "while opening error file to write stderr \
+          of {} running on {}",
+          self.conf.emph( & self.instance[tool].name ),
+          self.conf.emph( self.instance.str_of_bench(bench) )
+        )
+      )
+    ) ;
+    file.write_all(& output.stderr).chain_err(
+      || format!(
+        "while writing stderr of {} running on {}",
+        self.conf.emph( & self.instance[tool].name ),
+        self.conf.emph( self.instance.str_of_bench(bench) )
+      )
+    )
+  }
+
+  /// Dumps the stdout of some output for a tool on a benchmark.
+  fn dump_stdout(
+    & self, tool: ToolIndex, bench: BenchIndex, output: & Output
+  ) -> Res<()> {
+    let mut path = try!( self.mk_out_dir(tool) ) ;
+    path.push( self.instance.str_of_bench(bench) ) ;
+    let mut file = try!(
+      open_file_writer(path).chain_err(
+        || format!(
+          "while opening output file to write stdout \
+          of {} running on {}",
+          self.conf.emph( & self.instance[tool].name ),
+          self.conf.emph( self.instance.str_of_bench(bench) )
+        )
+      )
+    ) ;
+    file.write_all(& output.stdout).chain_err(
+      || format!(
+        "while writing output of {} running on {}",
+        self.conf.emph( & self.instance[tool].name ),
+        self.conf.emph( self.instance.str_of_bench(bench) )
+      )
+    )
+  }
 }
+

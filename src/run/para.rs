@@ -51,7 +51,7 @@ pub struct RunRes<T> {
   /// Bench index.
   pub bench: BenchIndex,
   /// Result.
-  pub res: Res< Option<T> >,
+  pub res: Res<T>,
 }
 /// Channel from tool runs to master.
 pub fn tool_to_master_channel<T>() -> (

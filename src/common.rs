@@ -11,6 +11,8 @@ pub use std::path::{ Path, PathBuf } ;
 pub use std::iter::Iterator ;
 pub use std::sync::Arc ;
 
+pub use pbr::{ ProgressBar, MultiBar } ;
+
 use ansi::{ Style, Colour } ;
 
 use errors::* ;
@@ -81,8 +83,12 @@ pub struct Conf {
   pub tool_file: String,
   /// Benchmark file.
   pub bench_file: String,
-  /// Quite mode?
+  /// Quiet mode?
   pub quiet: bool,
+  /// Verbose mode?
+  pub verb: bool,
+  /// Log output?
+  pub log_output: bool,
   /// Emphasis style.
   emph: Style,
   /// Happy style.
@@ -103,6 +109,8 @@ impl Default for Conf {
       tool_file: "tools.conf".into(),
       bench_file: "bench.file".into(),
       quiet: false,
+      verb: false,
+      log_output: false,
       emph: Style::new().bold(),
       hap: Colour::Green.normal(),
       sad: Colour::Yellow.normal(),
@@ -111,6 +119,27 @@ impl Default for Conf {
   }
 }
 impl Conf {
+  /// Creates a configuration.
+  #[inline]
+  pub fn mk(
+    bench_par: usize, tool_par: usize,
+    timeout: Duration,
+    out_dir: String, tool_file: String, bench_file: Option<String>,
+    quiet: bool, verb: bool, log_output: bool,
+    colored: bool,
+  ) -> Self {
+    Conf {
+      bench_par, tool_par, timeout,
+      out_dir, tool_file, bench_file: bench_file.expect(
+        "optional bench file is unimplemented"
+      ),
+      quiet, verb, log_output,
+      emph: if colored { Style::new().bold() } else { Style::new() },
+      hap: if colored { Colour::Green.normal().bold() } else { Style::new() },
+      sad: if colored { Colour::Yellow.normal().bold() } else { Style::new() },
+      bad: if colored { Colour::Red.normal().bold() } else { Style::new() },
+    }
+  }
   /// String emphasis.
   #[inline]
   pub fn emph<S: AsRef<str>>(& self, s: S) -> String {
@@ -161,7 +190,7 @@ unsafe impl Sync for ToolConf {}
 /// The index of a tool, just a usize.
 ///
 /// Can **only** be created by a `ToolRange`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ToolIndex {
   /// The index.
   n: usize,

@@ -196,7 +196,7 @@ lazy_static!{
 }
 
 /// Parses tool configurations from some bytes.
-pub fn work<'a>(conf: & Arc<Conf>, bytes: & 'a [u8]) -> Res<
+pub fn work<'a>(conf: & Conf, bytes: & 'a [u8]) -> Res<
   Vec< ToolConf >
 > {
   match tool_confs(bytes) {

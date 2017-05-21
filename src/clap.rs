@@ -1,6 +1,5 @@
 //! Command-Line Argument Parsing (clap).
 
-use std::env::{ Args, args } ;
 use std::str::FromStr ;
 
 use regex::Regex ;
@@ -8,297 +7,275 @@ use regex::Regex ;
 use errors::* ;
 use common::* ;
 
-/// Wrapper around `std::env::Args` to allow pushing back an argument.
-pub struct ArgVec {
-  /// Prefix where things can be pushed.
-  ///
-  /// The length of the prefix should always be 0 or 1.
-  pref: Vec<String>,
-  /// Tail where things are popped if `pref` is empty.
-  tail: Args,
-}
-impl ArgVec {
-  /// Fetches the arguments.
-  pub fn mk() -> Self {
-    ArgVec {
-      pref: Vec::with_capacity(1), tail: args(),
-    }
-  }
-  /// Pops an argument.
-  pub fn pop(& mut self) -> Option<String> {
-    debug_assert!{ self.pref.len() <= 1 }
-    self.pref.pop().or_else( || self.tail.next() )
-  }
-  /// Pushes an argument
-  pub fn push(& mut self, arg: String) {
-    debug_assert_eq!{ self.pref.len(), 0 }
-    self.pref.push(arg)
-  }
-}
 
-// Used for error reporting
-static tmo_format: & str = "<int>['min'|'s']" ;
+fn tmo_err(got: & str) -> Error {
+  clap_err(
+    "argument timeout", format!("expected `{}`, got {}", tmo_format, got)
+  )
+}
+static tmo_format: & str = "[int]s|[int]min" ;
 lazy_static!{
   static ref tmo_regex: Regex = Regex::new(
     r"^(\d*)(min|s)$"
   ).unwrap() ;
 }
-static tmo_name: & str = "argument timeout" ;
-fn tmo_err(got: & str) -> Error {
-  clap_err(
-    tmo_name, format!("expected `{}`, got {}", tmo_format, got)
-  )
-}
-/// Timeout clap.
-fn timeout_clap(args: & mut ArgVec, conf: & mut Duration) -> Res<()> {
-  if let Some(arg) = args.pop() {
-    if let Some(caps) = tmo_regex.captures(& arg) {
-      debug_assert_eq!{ caps.len(), 3 }
 
-      caps.get(1).ok_or(
-        tmo_err(& arg)
-      ).and_then(
-        |to| u64::from_str(
-          to.as_str()
-        ).map_err(
-          |e| clap_err(
-            tmo_name,
-            format!("expected integer, got {} ({})", to.as_str(), e)
-          )
+/// Timeout from a string.
+fn tmo_of_str(s: & str) -> Res<Duration> {
+  if let Some(caps) = tmo_regex.captures(s) {
+    debug_assert_eq!{ caps.len(), 3 }
+
+    caps.get(1).ok_or(
+      tmo_err(& s)
+    ).and_then(
+      |to| u64::from_str(
+        to.as_str()
+      ).map_err(
+        |e| clap_err(
+          "timeout argument",
+          format!("expected integer, got `{}` ({})", to.as_str(), e)
         )
-      ).and_then(
-        |num| {
-          caps.get(2).ok_or(
-            tmo_err(& arg)
-          ).and_then(
-            |unit| match unit.as_str() {
-              "min" => {
-                * conf = Duration::new(60 * num, 0) ;
-                Ok(())
-              },
-              "s" => {
-                * conf = Duration::new(num, 0) ;
-                Ok(())
-              },
-              _ => Err( tmo_err(& arg) ),
-            }
-          )
-        }
       )
-
-    } else { bail!( tmo_err(& arg) ) }
-  } else { bail!( tmo_err("nothing") ) }
-}
-
-
-
-
-
-
-static mode_name: & str = "option for parallel benchs/tools" ;
-fn mode_err(got: & str) -> Error {
-  clap_err(
-    mode_name, format!("expected `benchs.<int>` or `tools.<int>`, got {}", got)
-  )
-}
-lazy_static!{
-  static ref mode_regex: Regex = Regex::new(
-    r"(?x)^
-      ( benchs|tools ) \. ( [\d]* )
-    $"
-  ).unwrap() ;
-}
-/// Mode parser.
-fn mode_clap(
-  args: & mut ArgVec, bench_par: & mut usize, tool_par: & mut usize
-) -> Res<()> {
-  
-  'is_mode: while let Some(arg) = args.pop() {
-    if arg == "//" {
-
-      try!(
-        args.pop().ok_or(
-          mode_err("nothing")
+    ).and_then(
+      |num| {
+        caps.get(2).ok_or(
+          tmo_err(& s)
         ).and_then(
-          |arg| {
-            if let Some(caps) = mode_regex.captures(& arg) {
-              debug_assert_eq!{ caps.len(), 3 }
-
-              caps.get(2).ok_or(
-                tmo_err(& arg)
-              ).and_then(
-                |max| usize::from_str(
-                  max.as_str()
-                ).map_err(
-                  |e| clap_err(
-                    mode_name,
-                    format!("expected integer, got {} ({})", max.as_str(), e)
-                  )
-                )
-              ).and_then(
-                |max| {
-                  caps.get(1).ok_or(
-                    mode_err(& arg)
-                  ).and_then(
-                    |which| match which.as_str() {
-                      "benchs" => {
-                        * bench_par = max ;
-                        Ok(())
-                      },
-                      "tools" => {
-                        * tool_par = max ;
-                        Ok(())
-                      },
-                      _ => Err( mode_err(& arg) ),
-                    }
-                  )
-                }
+          |unit| match unit.as_str() {
+            "min" => Ok(
+              Duration::new(60 * num, 0)
+            ),
+            "s" => Ok(
+              Duration::new(num, 0)
+            ),
+            s => Err(
+              clap_err(
+                "timeout argument",
+                format!("expected `min` or `s`, got `{}`", s)
               )
-            } else {
-              Err( mode_err(& arg) )
-            }
+            ),
           }
-
-
-          // |arg| match arg.as_str() {
-          //   "bench" => {
-          //     * bench_par = true ;
-          //     Ok(())
-          //   },
-          //   "tool" => {
-          //     * tool_par = true ;
-          //     Ok(())
-          //   },
-          //   _ => Err( mode_err(& arg) ),
-          // }
         )
-      )
-
-    } else {
-      args.push(arg) ;
-      break 'is_mode
-    }
+      }
+    )
+  } else {
+    bail!(
+      tmo_err("timeout argument", )
+    )
   }
-  
-  Ok(())
+}
+
+// Timeout validator.
+fn tmo_validator(s: String) -> Result<(), String> {
+  if let Ok(_) = tmo_of_str(& s) {
+    Ok(())
+  } else {
+    Err(
+      format!("expected <{}>, got `{}`", tmo_format, s)
+    )
+  }
 }
 
 
-/// Option parser.
-fn option_clap(
-  args: & mut ArgVec, conf: & mut Conf
-) -> Res<()> {
-  'work: while let Some(arg) = args.pop() {
-    if arg.chars().next().unwrap() != '-' {
-      // Not an option.
-      args.push(arg) ;
-      break 'work
-    }
-
-    match & arg as & str {
-
-      // Quiet.
-      "-q" => conf.quiet = true,
-
-      // Output directory.
-      "-o" => if let Some(arg) = args.pop() {
-        conf.out_dir = arg
-      } else {
-        bail!(
-          clap_err("option for output directory", "got nothing")
-        )
-      },
-
-      // Unknown.
-      s => bail!(
-        clap_err(
-          format!("unknown option `{}`", conf.emph(s)),
-          ""
-        )
-      ),
-    }
+/// Boolean of a string.
+fn bool_of_str(s: & str) -> Option<bool> {
+  match & s as & str {
+    "on" | "true" => Some(true),
+    "off" | "false" => Some(false),
+    _ => None,
   }
+}
 
-  Ok(())
+/// Validates boolean input.
+fn bool_validator(s: String) -> Result<(), String> {
+  if let Some(_) = bool_of_str(& s) {
+    Ok(())
+  } else {
+    Err(
+      format!("expected `on/true` or `off/false`, got `{}`", s)
+    )
+  }
+}
+
+/// Validates integer input.
+fn int_validator(s: String) -> Result<(), String> {
+  match usize::from_str(& s) {
+    Ok(_) => Ok(()),
+    Err(_) => Err(
+      format!("expected an integer, got `{}`", s)
+    ),
+  }
 }
 
 
 
-static tool_file_name: & str = "tool file argument" ;
-static bench_file_name: & str = "bench file argument" ;
-/// Parses all arguments.
+/// Clap.
 pub fn work() -> Res<Conf> {
-  let args = & mut ArgVec::mk() ;
-  let mut conf = Conf::default() ;
-  // First argument's name of the binary.
-  let _ = args.pop() ;
+  use new_clap::* ;
 
-  try!( option_clap(args, & mut conf) ) ;
+  let matches = App::new(
+    crate_name!()
+  ).version(
+    crate_version!()
+  ).author(
+    crate_authors!()
+  ).about(
+    "`benchi` is a customizable benchmarking tool."
+  ).arg(
+    Arg::with_name("out_dir").short("-o").long("--out_dir").help(
+      "Sets the output directory"
+    ).value_name("dir").default_value("./").takes_value(true)
+  ).arg(
+    Arg::with_name("quiet").short("-q").help(
+      "No output, except errors"
+    ).conflicts_with("verbose")
+  ).arg(
+    Arg::with_name("verbose").short("-v").help(
+      "More verbose output"
+    ).conflicts_with("quiet")
+  ).arg(
+    Arg::with_name("colored").short("-c").long("--color").help(
+      "Colored output"
+    ).default_value("on").takes_value(true).validator(bool_validator)
+  ).subcommand(
 
-  try!( timeout_clap(args, & mut conf.timeout) ) ;
 
-  try!( mode_clap(args, & mut conf.bench_par, & mut conf.tool_par) ) ;
+    //
+    // |===| Run subcommand.
+    //
+    SubCommand::with_name("run").about(
+      "Runs benchmarks according to some configuration file."
+    ).after_help(
+      "\
+The different tools run on each benchmark: the value of `--tools` decides how
+many tools can run at the same time. The value of `--benchs` specifies the
+number of benchmarks handled in parallel.
 
-  if let Some(tool_file) = args.pop() {
+So, with `--benchs 2` and `--tools 3`, 6 (2*3) threads will handle up to 2
+benchmarks simultaneously, with up to 3 tools running in parallel on each of
+them.
+                     ___________master___________
+                    |                            |
+               ___bench___                  ___bench___
+              |     |     |                |     |     |
+             tool  tool  tool             tool  tool  tool
 
-    {
-      let path = Path::new(& tool_file) ;
-      if ! path.exists() {
-        bail!(
-          clap_err(
-            tool_file_name, format!("file `{}` does not exist", tool_file)
-          )
-        )
-      }
-      if ! path.is_file() {
-        bail!(
-          clap_err(
-            tool_file_name, format!("`{}` is a directory", tool_file)
-          )
-        )
-      }
-    }
-    conf.tool_file = tool_file ;
+# Examples
+
+`run --benchs 6 --tools 1 ...` runs the tools sequentially on 6 benchmarks at
+the same time
+`run --benchs 1 --tools 2 ...` runs up to 2 tools in parallel on each benchmark
+sequentially\
+      "
+    ).arg(
+      Arg::with_name("timeout").short("-t").long("--timeout").help(
+        "Sets the timeout for each run"
+      ).value_name(tmo_format).validator(
+        tmo_validator
+      ).default_value("1min").takes_value(true)
+    ).arg(
+      Arg::with_name("para_benchs").long("--benchs").help(
+        "Number of benchmarks to run in parallel"
+      ).value_name("int").default_value("1").takes_value(true).validator(
+        int_validator
+      )
+    ).arg(
+      Arg::with_name("para_tools").long("--tools").help(
+        "Number of tools to run in parallel on each benchmark"
+      ).value_name("int").default_value("1").takes_value(true).validator(
+        int_validator
+      )
+    ).arg(
+      Arg::with_name("try").long("--try").help(
+        "Only runs on `n` benchmarks (to try the set up)"
+      ).value_name("int").takes_value(true)
+    ).arg(
+      Arg::with_name("log_out").long("--log_output").help(
+        "Log the output of the runs"
+      )
+    ).arg(
+      Arg::with_name("CONF").help(
+        "The configuration file (see `benchi conf -h` for details)"
+      ).required(true).index(1)
+    ).arg(
+      Arg::with_name("BENCHS").help(
+        "\
+The file containing the inputs to give to the tools. Optional, can be
+specified in the configuration file.\
+        "
+      ).index(2)
+    )
+
+
+  ).get_matches() ;
+
+
+  // Quiet / verbose.
+  let quiet = matches.is_present("quiet") ;
+  let verb = matches.is_present("verbose") ;
+
+  // Colored.
+  let colored = matches.value_of("colored").and_then(
+    |s| bool_of_str(& s)
+  ).expect(
+    "unreachable(colored): default is provided and input validated in clap"
+  ) ;
+
+  // Output directory.
+  let out_dir = matches.value_of("out_dir").expect(
+    "unreachable(out_dir): default is provided"
+  ).to_string() ;
+
+  // Run mode.
+  if let Some(matches) = matches.subcommand_matches("run") {
+
+    let log_output = matches.is_present("log_out") ;
+
+    // Bench and tool parallel settings.
+    let bench_par = matches.value_of("para_benchs").map(
+      usize::from_str
+    ).expect(
+      "unreachable(bench_par): default is provided"
+    ).expect(
+      "unreachable(bench_par): input validated in clap"
+    ) ;
+    let tool_par = matches.value_of("para_tools").map(
+      usize::from_str
+    ).expect(
+      "unreachable(tool_par): default is provided"
+    ).expect(
+      "unreachable(tool_par): input validated in clap"
+    ) ;
+
+    // Timeout.
+    let timeout = matches.value_of("timeout").map(
+      tmo_of_str
+    ).expect(
+      "unreachable(timeout): default is provided"
+    ).expect(
+      "unreachable(timeout): input validated in clap"
+    ) ;
+
+    // Conf file.
+    let tool_file = matches.value_of("CONF").expect(
+      "unreachable(CONF): default is provided"
+    ).to_string() ;
+    // Bench file.
+    let bench_file = matches.value_of("BENCHS").map(|s| s.to_string()) ;
+
+    Ok(
+      Conf::mk(
+        bench_par, tool_par, timeout,
+        out_dir, tool_file, bench_file,
+        quiet, verb, log_output, colored
+      )
+    )
 
   } else {
-    bail!(
-      clap_err(tool_file_name, "none provided")
-    )
+    panic!("aaa")
   }
 
-  if let Some(bench_file) = args.pop() {
-
-    {
-      let path = Path::new(& bench_file) ;
-      if ! path.exists() {
-        bail!(
-          clap_err(
-            bench_file_name, format!("file `{}` does not exist", bench_file)
-          )
-        )
-      }
-      if ! path.is_file() {
-        bail!(
-          clap_err(
-            bench_file_name, format!("`{}` is a directory", bench_file)
-          )
-        )
-      }
-    }
-    conf.bench_file = bench_file ;
-
-  } else {
-    bail!(
-      clap_err(tool_file_name, "none provided")
-    )
-  }
-
-  // Extra arguments?
-  if let Some(arg) = args.pop() {
-    bail!(
-      clap_err( format!("unexpected argument `{}`", arg), "")
-    )
-  }
-
-  Ok(conf)
 }
+
+
+

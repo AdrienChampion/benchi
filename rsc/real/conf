@@ -5,5 +5,10 @@ find 1 {
 
 find 2 {
   short: find_2
-  cmd: "find ~/ -name"
+  cmd: "find /Users/uchuu -name"
+}
+
+find 3 {
+  short: find_3
+  cmd: "find . -name"
 }
