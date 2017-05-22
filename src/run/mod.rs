@@ -389,6 +389,7 @@ impl Master {
 
   /// Launches the listen/dispatch loop.
   pub fn run(mut self) -> Res<Duration> {
+    log!{ self.conf => "" }
     self.internal_run()
   }
 
@@ -568,7 +569,7 @@ impl Master {
   #[inline]
   pub fn mk_err_dir(& self, tool: ToolIndex) -> Res<PathBuf> {
     let mut path = PathBuf::from( & self.conf.out_dir ) ;
-    path.push( self.instance[tool].short.get() ) ;
+    path.push( & self.instance[tool].short ) ;
     path.push("err") ;
     mk_dir(& path).chain_err(
       || format!(
@@ -581,7 +582,7 @@ impl Master {
   #[inline]
   pub fn mk_out_dir(& self, tool: ToolIndex) -> Res<PathBuf> {
     let mut path = PathBuf::from( & self.conf.out_dir ) ;
-    path.push( self.instance[tool].short.get() ) ;
+    path.push( & self.instance[tool].short ) ;
     path.push("out") ;
     mk_dir(& path).chain_err(
       || format!(

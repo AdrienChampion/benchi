@@ -48,6 +48,14 @@ macro_rules! log {
       log!( |internal| => $($stuff)+ ; )
     }
   }) ;
+
+  (
+    $conf:expr , $verb:ident => $($stuff:tt)+
+  ) => ({
+    if $conf.$verb {
+      log!( |internal| => $($stuff)+ ; )
+    }
+  }) ;
 }
 
 /// Opens a file in write mode.
@@ -89,6 +97,8 @@ pub struct Conf {
   pub verb: bool,
   /// Log output?
   pub log_output: bool,
+  /// Trying?
+  pub try: Option<usize>,
   /// Emphasis style.
   emph: Style,
   /// Happy style.
@@ -111,6 +121,7 @@ impl Default for Conf {
       quiet: false,
       verb: false,
       log_output: false,
+      try: None,
       emph: Style::new().bold(),
       hap: Colour::Green.normal(),
       sad: Colour::Yellow.normal(),
@@ -125,20 +136,37 @@ impl Conf {
     bench_par: usize, tool_par: usize,
     timeout: Duration,
     out_dir: String, tool_file: String, bench_file: Option<String>,
-    quiet: bool, verb: bool, log_output: bool,
+    quiet: bool, verb: bool, log_output: bool, try: Option<usize>,
     colored: bool,
   ) -> Self {
-    Conf {
+    let mut conf = Conf {
       bench_par, tool_par, timeout,
       out_dir, tool_file, bench_file: bench_file.expect(
         "optional bench file is unimplemented"
       ),
-      quiet, verb, log_output,
-      emph: if colored { Style::new().bold() } else { Style::new() },
-      hap: if colored { Colour::Green.normal().bold() } else { Style::new() },
-      sad: if colored { Colour::Yellow.normal().bold() } else { Style::new() },
-      bad: if colored { Colour::Red.normal().bold() } else { Style::new() },
-    }
+      quiet, verb, log_output, try,
+      emph: Style::new(),
+      hap: Style::new(),
+      sad: Style::new(),
+      bad: Style::new(),
+    } ;
+    conf.coloring(colored) ;
+    conf
+  }
+  /// Sets the coloring.
+  pub fn coloring(& mut self, colored: bool) {
+    self.emph = if colored {
+      Style::new().bold()
+    } else { Style::new() } ;
+    self.hap = if colored {
+      Colour::Green.normal().bold()
+    } else { Style::new() } ;
+    self.sad = if colored {
+      Colour::Yellow.normal().bold()
+    } else { Style::new() } ;
+    self.bad = if colored {
+      Colour::Red.normal().bold()
+    } else { Style::new() } ;
   }
   /// String emphasis.
   #[inline]
@@ -167,13 +195,13 @@ impl Conf {
 #[derive(Clone, Debug)]
 pub struct ToolConf {
   /// Tool name.
-  pub name: Spnd<String>,
+  pub name: String,
   /// Short name.
-  pub short: Spnd<String>,
+  pub short: String,
   /// Graph name.
-  pub graph: Spnd<String>,
+  pub graph: String,
   /// Command (lines).
-  pub cmd: Spnd< Vec<String> >,
+  pub cmd: Vec<String>,
   // /// Optional validator.
   // pub validator: ()
 }
@@ -377,6 +405,11 @@ impl<T> Spnd<T> {
   #[inline]
   pub fn mk(val: T, start: usize, len: usize) -> Self {
     Spnd { val, start, len }
+  }
+  /// Extracts the value.
+  #[inline]
+  pub fn xtract(self) -> T {
+    self.val
   }
   /// Yields the internal value.
   #[inline]

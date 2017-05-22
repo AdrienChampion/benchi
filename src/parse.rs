@@ -8,6 +8,32 @@ use nom::{ IResult, multispace } ;
 use common::* ;
 use errors::* ;
 
+/// A tool configuration (parsing version).
+#[derive(Clone, Debug)]
+pub struct ToolConfParsing {
+  /// Tool name.
+  pub name: Spnd<String>,
+  /// Short name.
+  pub short: Spnd<String>,
+  /// Graph name.
+  pub graph: Spnd<String>,
+  /// Command (lines).
+  pub cmd: Spnd< Vec<String> >,
+  // /// Optional validator.
+  // pub validator: ()
+}
+impl ToolConfParsing {
+  /// Translates to the normal `ToolConf` structure.
+  pub fn to_tool_conf(self) -> ToolConf {
+    ToolConf {
+      name: self.name.xtract(),
+      short: self.short.xtract(),
+      graph: self.graph.xtract(),
+      cmd: self.cmd.xtract(),
+    }
+  }
+}
+
 macro_rules! byte_cnt {
   ($i:expr, $( $stuff:tt )+ ) => (
     map!( $i, $($stuff)+, |bytes: & [u8]| bytes.len() )
@@ -95,10 +121,30 @@ fn quoted_string<'a>(
   )
 }
 
+/// Parses some options.
+fn options<'a>(
+  bytes: & 'a [u8], cnt: usize
+) -> IResult< & 'a [u8], Spnd< Vec<String> > > {
+  let mut len = 0 ;
+  do_parse!(
+    bytes,
+    map!( tag!("options"), |bytes: & [u8]| len += bytes.len() ) >>
+    map!( opt_spc_cmt, |add| len += add ) >>
+    map!( char!(':'), |_| len += 1 ) >>
+    map!( opt_spc_cmt, |add| len += add ) >>
+    opts: map!(
+      apply!( quoted_string, cnt+len ),
+      |q: Spnd< Vec<String> >| { len += q.len() ; q.xtract() }
+    ) >> (
+      Spnd::mk(opts, cnt, len)
+    )
+  )
+}
+
 /// Parses a tool configuration.
 fn tool_conf<'a>(
   bytes: & 'a [u8], cnt: usize
-) -> IResult< & 'a [u8], (ToolConf, usize) > {
+) -> IResult< & 'a [u8], (ToolConfParsing, usize) > {
   let mut len = 0 ;
   do_parse!(
     bytes,
@@ -162,7 +208,7 @@ fn tool_conf<'a>(
     map!( char!('}'), |_| len += 1 ) >> ({
       let graph = graph.unwrap_or(name.clone()) ;
       (
-        ToolConf { name, short, graph, cmd }, len
+        ToolConfParsing { name, short, graph, cmd }, len
       )
     })
   )
@@ -171,10 +217,19 @@ fn tool_conf<'a>(
 /// Parses several tool configurations.
 fn tool_confs<'a>(
   bytes: & 'a [u8]
-) -> IResult< & 'a [u8], Vec< ToolConf > > {
+) -> IResult<
+  & 'a [u8], ( Vec<String>, Vec<ToolConfParsing> )
+> {
   let mut cnt = 0 ;
   do_parse!(
     bytes,
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    opts: opt!(
+      map!(
+        dbg_dmp!( apply!( options, cnt ) ),
+        |opts: Spnd< Vec<String> >| { cnt += opts.len() ; opts }
+      )
+    ) >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
       terminated!(
@@ -184,7 +239,9 @@ fn tool_confs<'a>(
         ),
         map!( opt_spc_cmt, |add| cnt += add )
       )
-    ) >> (vec)
+    ) >> ( (
+      opts.map(|o| o.xtract()).unwrap_or(vec![]), vec
+    ) )
   )
 }
 
@@ -197,12 +254,12 @@ lazy_static!{
 
 /// Parses tool configurations from some bytes.
 pub fn work<'a>(conf: & Conf, bytes: & 'a [u8]) -> Res<
-  Vec< ToolConf >
+  ( Vec<String>, Vec< ToolConfParsing > )
 > {
   match tool_confs(bytes) {
-    IResult::Done(rest, mut res) => {
+    IResult::Done(rest, (opts, mut tools)) => {
       if rest.is_empty() {
-        for tool_conf in res.iter_mut() {
+        for tool_conf in tools.iter_mut() {
           if tool_conf.cmd.is_empty() {
             bail!(
               format!(
@@ -231,7 +288,7 @@ pub fn work<'a>(conf: & Conf, bytes: & 'a [u8]) -> Res<
           } ;
           tool_conf.cmd.replace(cmd)
         }
-        Ok(res)
+        Ok( (opts, tools) )
       } else {
         bail!("conf file parse error: could not parse whole file")
       }

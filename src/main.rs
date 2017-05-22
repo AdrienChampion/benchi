@@ -4,7 +4,7 @@
 #![allow(non_upper_case_globals)]
 
 #[macro_use]
-extern crate clap as new_clap ;
+extern crate clap as clap_lib ;
 extern crate pbr ;
 extern crate ansi_term as ansi ;
 extern crate regex ;
@@ -135,9 +135,9 @@ pub mod errors {
 
 
 macro_rules! while_opening {
-  ($conf:expr) => ({
+  ($conf:expr, $file:ident) => ({
     let e = ErrorKind::Msg(
-      format!("while opening tool conf file {}", $conf.emph(& $conf.tool_file))
+      format!("while opening file {}", $conf.emph(& $conf.$file))
     ) ;
     || e
   }) ;
@@ -153,9 +153,28 @@ macro_rules! while_opening {
 fn main() {
 
   match clap::work() {
-    Ok(mut conf) => {
+    Ok( (mut conf, tools) ) => {
 
-      let instance = match load_instance(& mut conf) {
+      log!{
+        conf, verb =>
+          "{}:", conf.emph("Configuration") ;
+          "  // benchs: {}", conf.bench_par ;
+          "  // tools : {}", conf.tool_par ;
+          "    timeout: {}", conf.timeout.as_sec_str() ;
+          "    out dir: {}", conf.out_dir ;
+          "    log out: {}", conf.log_output ; {
+            if let Some(max) = conf.try {
+              log!{ conf, verb => "        try: {}", max }
+            }
+          }
+          ""
+      }
+
+      log!{
+        conf, verb => "Loading instance..."
+      }
+
+      let instance = match load_instance(& mut conf, tools) {
         Ok(instance) => instance,
         Err(e) => {
           print_err(& conf, e, true) ;
@@ -179,43 +198,21 @@ fn main() {
 
 
 
-fn load_instance(conf: & mut Conf) -> Res<Instance> {
-  use std::io::Read ;
-
-  // Create output directory if it doesn't already exist.
-  try!(
-    mk_dir(& conf.out_dir).chain_err(
-      || format!(
-        "while creating output directory `{}`", conf.emph(& conf.out_dir)
-      )
-    )
-  ) ;
-
-  let mut file = try!(
-    File::open(& conf.tool_file).chain_err( while_opening!(conf) )
-  ) ;
-  let mut buff = Vec::with_capacity(217) ;
-  let _ = try!(
-    file.read_to_end(& mut buff).chain_err( while_opening!(conf) )
-  ) ;
-
-  let tool_confs = try!(
-    ::parse::work(conf, & buff)
-  ) ;
+fn load_instance(conf: & mut Conf, tools: Vec<ToolConf>) -> Res<Instance> {
 
   // Make sure names are unique.
   {
-    let mut tool_iter = tool_confs.iter() ;
+    let mut tool_iter = tools.iter() ;
     while let Some(tool_a) = tool_iter.next() {
       let other_tools = tool_iter.clone() ;
       for tool_b in other_tools {
-        if tool_a.name.get() == tool_b.name.get() {
+        if tool_a.name == tool_b.name {
           bail!(
             "two of the tools have the same name `{}`",
             conf.bad(& tool_a.name),
           )
         }
-        if tool_a.short.get() == tool_b.short.get() {
+        if tool_a.short == tool_b.short {
           bail!(
             "tools `{}` and `{}` have the same short name `{}`",
             conf.emph(& tool_a.name),
@@ -223,7 +220,7 @@ fn load_instance(conf: & mut Conf) -> Res<Instance> {
             conf.bad(& tool_a.short),
           )
         }
-        if tool_a.graph.get() == tool_b.graph.get() {
+        if tool_a.graph == tool_b.graph {
           bail!(
             "tools `{}` and `{}` have the same graph name `{}`",
             conf.emph(& tool_a.name),
@@ -235,11 +232,13 @@ fn load_instance(conf: & mut Conf) -> Res<Instance> {
     }
   }
 
-  let benchs = {
+  let mut benchs = {
 
     let buff_read = try!(
       File::open(& conf.bench_file).map(
         |file| BufReader::new(file)
+      ).chain_err(
+        while_opening!(conf, bench_file)
       )
     ) ;
     let mut benchs = Vec::with_capacity( 200 ) ;
@@ -248,9 +247,18 @@ fn load_instance(conf: & mut Conf) -> Res<Instance> {
       benchs.push( try!(maybe_line) )
     }
     benchs
+
   } ;
 
-  let instance = Instance::mk(tool_confs, benchs) ;
+  if let Some(max) = conf.try {
+    benchs.truncate(max)
+  }
+
+  // let tools = tools.into_iter().map(
+  //   |tool| tool.to_tool_conf()
+  // ).collect() ;
+
+  let instance = Instance::mk(tools, benchs) ;
 
   if instance.tool_len() < conf.tool_par {
     conf.tool_par = instance.tool_len()
@@ -259,18 +267,28 @@ fn load_instance(conf: & mut Conf) -> Res<Instance> {
     conf.bench_par = instance.bench_len()
   }
 
-  log!(
-    conf =>
-      "Running {} tools on {} benchmarks...",
-      instance.tool_len(), instance.bench_len()
-  ) ;
-
   Ok(instance)
 }
 
 
 
 fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
+  // Create output directory if it doesn't already exist.
+  try!(
+    mk_dir(& conf.out_dir).chain_err(
+      || format!(
+        "while creating output directory `{}`", conf.emph(& conf.out_dir)
+      )
+    )
+  ) ;
+
+  log!(
+    conf =>
+      { log!( conf, verb => "" ) }
+      "Running {} tools on {} benchmarks...",
+      instance.tool_len(), instance.bench_len()
+  ) ;
+
   let master = try!(
     run::Master::mk(conf.clone(), instance)
   ) ;
@@ -282,6 +300,7 @@ fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
       let time = format!(
         "{}.{}", time.as_secs(), time.subsec_nanos() / 1_000_000u32
       ) ;
+      " " ;
       "Done in {}s", conf.emph(& time)
   ) ;
 
