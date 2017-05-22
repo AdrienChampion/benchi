@@ -65,7 +65,7 @@ fn spc_cmt(
 
 named!{
   opt_spc_cmt<usize>, map!(
-    opt!(spc_cmt), |opt: Option<usize>| opt.unwrap_or(0)
+    opt!( complete!(spc_cmt) ), |opt: Option<usize>| opt.unwrap_or(0)
   )
 }
 
@@ -226,18 +226,20 @@ fn tool_confs<'a>(
     map!( opt_spc_cmt, |add| cnt += add ) >>
     opts: opt!(
       map!(
-        dbg_dmp!( apply!( options, cnt ) ),
+        apply!( options, cnt ),
         |opts: Spnd< Vec<String> >| { cnt += opts.len() ; opts }
       )
     ) >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
-      terminated!(
-        map!(
+      do_parse!(
+        tools: map!(
           apply!(tool_conf, cnt),
           |(tool, len)| { cnt += len ; tool }
-        ),
-        map!( opt_spc_cmt, |add| cnt += add )
+        ) >>
+        map!( opt_spc_cmt, |add| cnt += add ) >> (
+          tools
+        )
       )
     ) >> ( (
       opts.map(|o| o.xtract()).unwrap_or(vec![]), vec
