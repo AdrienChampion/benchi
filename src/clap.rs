@@ -241,7 +241,7 @@ pub fn work() -> Res< (Conf, Vec<ToolConf>) > {
     ) ;
     let matches = Matches { primary: & matches, secondary: & file_matches } ;
     matches.clap_main(& mut conf) ;
-    matches.clap_run(& mut conf) ;
+    try!( matches.clap_run(& mut conf) ) ;
     Ok( (conf, tools) )
   } else {
     let msg = format!(
@@ -480,7 +480,7 @@ impl<'a> Matches<'a> {
   }
 
   // Run options, except the tool file.
-  fn clap_run(& self, conf: & mut Conf) {
+  fn clap_run(& self, conf: & mut Conf) -> Res<()> {
     conf.log_output = self.sub_is_present("run", "log_out") ;
 
     // Bench and tool parallel settings.
@@ -515,8 +515,14 @@ impl<'a> Matches<'a> {
     ) ;
 
     // Bench file.
-    conf.bench_file = self.sub_value_of("run", "BENCHS").expect(
-      "optional bench file not implemented yet"
-    ) ;
+    conf.bench_file = if let Some(f) = self.sub_value_of("run", "BENCHS") {
+      f
+    } else {
+      bail!(
+        "no benchmark file specified in command line or configuration file"
+      )
+    } ;
+
+    Ok(())
   }
 }
