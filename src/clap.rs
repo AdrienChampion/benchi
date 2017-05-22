@@ -423,6 +423,9 @@ impl<'a> Matches<'a> {
   fn is_present(& self, name: & str) -> bool {
     self.primary.is_present(name) || self.secondary.is_present(name)
   }
+  fn is_present_in_primary(& self, name: & str) -> bool {
+    self.primary.is_present(name)
+  }
   fn value_of(& self, name: & str) -> Option<&str> {
     if self.primary.occurrences_of(name) > 0 {
       self.primary.value_of(name)
@@ -459,8 +462,14 @@ impl<'a> Matches<'a> {
   /// Main options.
   fn clap_main(& self, conf: & mut Conf) {
     // Quiet / verbose.
-    conf.quiet = self.is_present("quiet") ;
-    conf.verb = self.is_present("verbose") ;
+    if self.is_present_in_primary("quiet") {
+      conf.quiet = true
+    } else if self.is_present_in_primary("verbose") {
+      conf.verb = true
+    } else {
+      conf.quiet = self.is_present("quiet") ;
+      conf.verb = self.is_present("verbose")
+    }
 
     // Colored.
     let colored = self.value_of("colored").and_then(
