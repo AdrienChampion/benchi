@@ -321,15 +321,15 @@ fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
     )
   ) ;
 
+  let master = try!(
+    run::Master::mk(conf.clone(), instance)
+  ) ;
+
   log!(
     conf =>
       { log!( conf, verb => "" ) }
       "Running {} tools on {} benchmarks...",
       instance.tool_len(), instance.bench_len()
-  ) ;
-
-  let master = try!(
-    run::Master::mk(conf.clone(), instance)
   ) ;
 
   let time = try!( master.run() ) ;

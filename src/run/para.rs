@@ -16,7 +16,7 @@ pub use std::sync::mpsc::{
 /// Kills a process from its pid.
 #[cfg(not(windows))]
 pub fn kill_process(pid: u32) {
-  let _ = Command::new("kill").arg("-9").arg(
+  let _ = Command::new("kill").arg("-s").arg("9").arg(
     format!("-{}", pid)
   ).output() ;
 }
