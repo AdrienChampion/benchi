@@ -322,7 +322,7 @@ fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
   ) ;
 
   let master = try!(
-    run::Master::mk(conf.clone(), instance)
+    run::Master::mk(conf.clone(), instance.clone())
   ) ;
 
   log!(
