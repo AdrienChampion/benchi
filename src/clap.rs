@@ -302,7 +302,11 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
       "`benchi` is a customizable benchmarking tool."
     ).arg(
       Arg::with_name("out_dir").short("-o").long("--out_dir").help(
-        "Sets the output directory"
+        "\
+Sets the output directory. If the path ends with `today` (`now`), then `today`
+(`now`) will be replaced with `<y>_<m>_<d>` (`<y>_<m>_<d>_at_<h><min>`)
+representing the current date (and time).\
+        "
       ).value_name("dir").default_if("./", defaults).takes_value(true)
     ).arg(
       Arg::with_name("quiet").short("-q").help(
