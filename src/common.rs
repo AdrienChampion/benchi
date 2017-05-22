@@ -462,3 +462,41 @@ impl DurationExt for Duration {
     )
   }
 }
+
+
+/// A plot command.
+pub enum Plot {
+  /// Compares two tools benchmark per benchmark (scatterplot).
+  Comparative {
+    /// The file to write the plot to.
+    file: Option<String>,
+    /// The first short tool name.
+    tool_1: String,
+    /// The second short tool name.
+    tool_2: String,
+  },
+
+  /// Cumulative plot for some tools.
+  Cumulative {
+    /// The file to write the plot to.
+    file: Option<String>,
+    /// Some tools to compare.
+    tools: Vec<String>,
+  },
+}
+impl Plot {
+  /// Creates a comparative plot command.
+  #[inline]
+  pub fn comparative(
+    file: Option<String>, tool_1: String, tool_2: String
+  ) -> Self {
+    Plot::Comparative { file, tool_1, tool_2 }
+  }
+  /// Creates a cumulative plot command.
+  #[inline]
+  pub fn cumulative(
+    file: Option<String>, tools: Vec<String>
+  ) -> Self {
+    Plot::Cumulative { file, tools }
+  }
+}

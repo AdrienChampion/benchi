@@ -1,5 +1,6 @@
 //! `benchi` runs benchmarks.
 
+#![feature(process_try_wait)]
 #![forbid(missing_docs)]
 #![allow(non_upper_case_globals)]
 

@@ -8,7 +8,7 @@ use common::* ;
 use errors::* ;
 
 pub use std::thread::{ spawn, sleep, JoinHandle } ;
-pub use std::process::{ Child, Command, Stdio, Output, ExitStatus } ;
+pub use std::process::{ Child, Command, Stdio, ExitStatus } ;
 pub use std::sync::mpsc::{
   channel, Sender, Receiver, RecvError, TryRecvError
 } ;
@@ -42,6 +42,16 @@ pub fn bench_to_tool_channel() -> (
   Sender< (ToolIndex, BenchIndex) >, Receiver< (ToolIndex, BenchIndex) >
 ) {
   channel()
+}
+
+/// Output of a process.
+pub struct Output {
+  /// Exit status if not timeout.
+  pub status: Option<ExitStatus>,
+  /// Stdout.
+  pub stdout: Vec<u8>,
+  /// Stderr.
+  pub stderr: Vec<u8>,
 }
 
 /// Result of a run.

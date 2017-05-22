@@ -16,12 +16,28 @@ use errors::* ;
 pub mod para ;
 use self::para::* ;
 
-enum Run {
-  Id(u32),
-  Done(
-    ::std::io::Result<::std::process::Output>,
-    Duration
-  ),
+
+fn output_of_kid(
+  cmd: & str, status: Option<ExitStatus>, kid: Child,
+) -> Res<Output> {
+  use std::io::Read ;
+  let mut stdout = Vec::with_capacity(100) ;
+  let mut stderr = Vec::with_capacity(100) ;
+  let _ = try!(
+    kid.stdout.unwrap().read_to_end( & mut stdout ).chain_err(
+      || format!("while reading stdout of `{}`", cmd)
+    )
+  ) ;
+  let _ = try!(
+    kid.stderr.unwrap().read_to_end( & mut stderr ).chain_err(
+      || format!("while reading stderr of `{}`", cmd)
+    )
+  ) ;
+  stdout.shrink_to_fit() ;
+  stderr.shrink_to_fit() ;
+  Ok(
+    Output { status, stdout, stderr }
+  )
 }
 
 /// Lowest level in the hierarchy, runs a tool on a benchmark.
@@ -87,94 +103,148 @@ impl ToolRun {
   fn run(
     & self, tool_idx: ToolIndex, bench_idx: BenchIndex
   ) -> Res< (Duration, Output) > {
-    let bench = self.instance[bench_idx].clone() ;
-    let vec_cmd = & self.instance[tool_idx].cmd ;
-    let kid_cmd = vec_cmd.clone() ;
+    let bench = & self.instance[bench_idx] ;
+    let kid_cmd = & self.instance[tool_idx].cmd ;
 
-    assert!( vec_cmd.len() > 0 ) ;
+    assert!( kid_cmd.len() > 0 ) ;
 
-    // Command will be ran asynchonously for timeouts.
-    let (sender, recver) = channel() ;
+    let mut cmd_str = kid_cmd[0].to_string() ;
+    let mut cmd = Command::new(& kid_cmd[0]) ;
+    for arg in & kid_cmd[1..] {
+      cmd.arg(arg) ;
+      cmd_str.push_str(arg)
+    }
+    cmd.arg(bench) ;
+    cmd_str.push_str(bench) ;
+    cmd.stdin( Stdio::null() ) ;
+    cmd.stdout( Stdio::piped() ) ;
+    cmd.stderr( Stdio::piped() ) ;
 
-    spawn(
-      move || {
-        let mut cmd = Command::new(& kid_cmd[0]) ;
-        for arg in & kid_cmd[1..] {
-          cmd.arg(arg) ;
-        }
-        cmd.arg(bench) ;
-        cmd.stdin( Stdio::null() ) ;
-        cmd.stdout( Stdio::piped() ) ;
-        cmd.stderr( Stdio::piped() ) ;
-        let start = Instant::now() ;
-        let child = cmd.spawn().expect("error spawning command") ;
-        let _ = sender.send( Run::Id(child.id()) ) ;
-        let output = child.wait_with_output() ;
-        // .map(
-        //   |out| (out.status, out.stdout, out.stderr)
-        // ) ;
-        let time = Instant::now() - start ;
-        let _ = sender.send( Run::Done(output, time) ) ;
-        ()
-      }
+    let (mut kid, start) = (
+      try!(
+        cmd.spawn().chain_err(
+          || format!("while running command `{}`", cmd_str)
+        )
+      ),
+      Instant::now()
     ) ;
-    let start = Instant::now() ;
-    
-    let mut kid_id = None ;
 
-    'receiving: loop {
-
-      // Is the kid done?
-      match recver.try_recv() {
-        Ok( Run::Id(id) ) => {
-          kid_id = Some(id) ;
-          continue 'receiving
+    'waiting: loop {
+      match try!(
+        kid.try_wait().chain_err(
+          || format!("while waiting for `{}`", cmd_str)
+        )
+      ) {
+        // Not done yet, timeout reached?
+        None => {
+          let time = Instant::now() - start ;
+          if time > self.conf.timeout {
+            try!(
+              kid.kill().chain_err(
+                || format!("while killing `{}`", cmd_str)
+              )
+            ) ;
+            return Ok(
+              ( time, try!( output_of_kid(& cmd_str, None, kid) ) )
+            )
+          } else {
+            // Wait a bit to avoid burning CPU.
+            sleep( Duration::from_millis(60) ) ;
+            continue 'waiting
+          }
         },
         // Done.
-        Ok( Run::Done(output, time) ) => {
-          return output.chain_err(
-            || {
-              let mut s = format!("running command") ;
-              for arg in vec_cmd.iter() {
-                s = format!("{} {}", s, arg)
-              }
-              s
-            }
-          ).chain_err(
-            || ErrorKind::ToolRun(
-              self.conf.clone(),
-              self.instance[tool_idx].clone(),
-              self.instance.str_of_bench(bench_idx).into()
-            )
-          ).map(
-            |out| (time, out)
+        Some(status) => {
+          let time = Instant::now() - start ;
+          return Ok(
+            ( time, try!( output_of_kid(& cmd_str, Some(status), kid) ) )
           )
         },
-
-        // Not yet...
-        Err(TryRecvError::Empty) => (),
-
-        // This should not happen.
-        Err(TryRecvError::Disconnected) => bail!({
-          let mut s = format!("disconnect from kid running command") ;
-          for arg in vec_cmd.iter() {
-            s = format!("{} {}", s, arg)
-          }
-          s
-        }),
       }
-
-      // Timeout reached?
-      if Instant::now() - start > self.conf.timeout {
-        if let Some(id) = kid_id {
-          kill_process(id)
-        }
-        continue 'receiving
-      }
-
-      // Wait a 100ms to avoid burning cpu.
-      sleep( Duration::from_millis(100) )
     }
+
+    // // Command will be ran asynchonously for timeouts.
+    // let (sender, recver) = channel() ;
+
+    // spawn(
+    //   move || {
+    //     let mut cmd = Command::new(& kid_cmd[0]) ;
+    //     for arg in & kid_cmd[1..] {
+    //       cmd.arg(arg) ;
+    //     }
+    //     cmd.arg(bench) ;
+    //     cmd.stdin( Stdio::null() ) ;
+    //     cmd.stdout( Stdio::piped() ) ;
+    //     cmd.stderr( Stdio::piped() ) ;
+    //     let start = Instant::now() ;
+    //     let child = cmd.spawn().expect("error spawning command") ;
+    //     let _ = sender.send( Run::Id(child.id()) ) ;
+    //     let output = child.wait_with_output() ;
+    //     // .map(
+    //     //   |out| (out.status, out.stdout, out.stderr)
+    //     // ) ;
+    //     let time = Instant::now() - start ;
+    //     let _ = sender.send( Run::Done(output, time) ) ;
+    //     ()
+    //   }
+    // ) ;
+    // let start = Instant::now() ;
+    
+    // let mut kid_id = None ;
+
+    // 'receiving: loop {
+
+    //   // Is the kid done?
+    //   match recver.try_recv() {
+    //     Ok( Run::Id(id) ) => {
+    //       kid_id = Some(id) ;
+    //       continue 'receiving
+    //     },
+    //     // Done.
+    //     Ok( Run::Done(output, time) ) => {
+    //       return output.chain_err(
+    //         || {
+    //           let mut s = format!("running command") ;
+    //           for arg in vec_cmd.iter() {
+    //             s = format!("{} {}", s, arg)
+    //           }
+    //           s
+    //         }
+    //       ).chain_err(
+    //         || ErrorKind::ToolRun(
+    //           self.conf.clone(),
+    //           self.instance[tool_idx].clone(),
+    //           self.instance.str_of_bench(bench_idx).into()
+    //         )
+    //       ).map(
+    //         |out| (time, out)
+    //       )
+    //     },
+
+    //     // Not yet...
+    //     Err(TryRecvError::Empty) => (),
+
+    //     // This should not happen.
+    //     Err(TryRecvError::Disconnected) => bail!({
+    //       let mut s = format!("disconnect from kid running command") ;
+    //       for arg in vec_cmd.iter() {
+    //         s = format!("{} {}", s, arg)
+    //       }
+    //       s
+    //     }),
+    //   }
+
+    //   // Timeout reached?
+    //   if Instant::now() - start > self.conf.timeout {
+    //     if let Some(id) = kid_id {
+    //       kill_process(id)
+    //     }
+    //     continue 'receiving
+    //   }
+
+    //   // Wait a 100ms to avoid burning cpu.
+    //   sleep( Duration::from_millis(100) )
+    // }
   }
 }
 
@@ -512,7 +582,8 @@ impl Master {
               let res = if time > self.conf.timeout {
                 format!( "timeout({})", self.conf.timeout.as_sec_str() )
               } else if ! (
-                output.stderr.is_empty() && output.status.success()
+                output.stderr.is_empty() &&
+                output.status.map(|s| s.success()).unwrap_or(true)
               ) {
                 "error".to_string()
               } else {
