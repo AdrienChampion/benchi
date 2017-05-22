@@ -283,7 +283,6 @@ impl Iterator for BenchRange {
 }
 
 
-
 /// Store the tools and the path to the benchmarks. Should **always** be
 /// immutable.
 pub struct Instance {
@@ -323,6 +322,11 @@ impl Instance {
   #[inline]
   pub fn str_of_bench(& self, index: BenchIndex) -> & str {
     & self.benchs[* index]
+  }
+  /// Safe name for a bench, unique and can be used as file id.
+  #[inline]
+  pub fn safe_name_for_bench(& self, index: BenchIndex) -> String {
+    format!("{}", * index)
   }
 }
 impl Index<BenchIndex> for Instance {

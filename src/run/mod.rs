@@ -521,7 +521,10 @@ impl Master {
               try!(
                 writeln!(
                   & mut self.tool_files[tool],
-                  "{} {}", self.instance.str_of_bench(bench), res
+                  "{} \"{}\" {}",
+                  self.instance.safe_name_for_bench(bench),
+                  self.instance.str_of_bench(bench),
+                  res
                 ).chain_err(
                   || format!(
                     "while writing result of {} running on {}",
@@ -597,7 +600,7 @@ impl Master {
     & self, tool: ToolIndex, bench: BenchIndex, output: & Output
   ) -> Res<()> {
     let mut path = try!( self.mk_err_dir(tool) ) ;
-    path.push( self.instance.str_of_bench(bench) ) ;
+    path.push( self.instance.safe_name_for_bench(bench) ) ;
     let mut file = try!(
       open_file_writer(path).chain_err(
         || format!(
@@ -622,7 +625,7 @@ impl Master {
     & self, tool: ToolIndex, bench: BenchIndex, output: & Output
   ) -> Res<()> {
     let mut path = try!( self.mk_out_dir(tool) ) ;
-    path.push( self.instance.str_of_bench(bench) ) ;
+    path.push( self.instance.safe_name_for_bench(bench) ) ;
     let mut file = try!(
       open_file_writer(path).chain_err(
         || format!(
