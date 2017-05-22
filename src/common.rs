@@ -326,7 +326,7 @@ impl Instance {
   /// Safe name for a bench, unique and can be used as file id.
   #[inline]
   pub fn safe_name_for_bench(& self, index: BenchIndex) -> String {
-    format!("{}", * index)
+    format!("{:0>1$}", * index, format!("{}", self.benchs.len()).len())
   }
 }
 impl Index<BenchIndex> for Instance {
