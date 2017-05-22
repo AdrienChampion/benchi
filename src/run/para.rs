@@ -17,7 +17,7 @@ pub use std::sync::mpsc::{
 #[cfg(not(windows))]
 pub fn kill_process(pid: u32) {
   let _ = Command::new("kill").arg("-9").arg(
-    format!("{}", pid)
+    format!("-{}", pid)
   ).output() ;
 }
 
