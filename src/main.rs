@@ -201,8 +201,7 @@ fn main() {
           "  // benchs: {}", conf.bench_par ;
           "  // tools : {}", conf.tool_par ;
           "    timeout: {}", conf.timeout.as_sec_str() ;
-          "    out dir: {}", conf.out_dir ;
-          "    log out: {}", conf.log_output ; {
+          "    out dir: {}", conf.out_dir ; {
             if let Some(max) = conf.try {
               log!{ conf, verb => "        try: {}", max }
             }
@@ -235,7 +234,6 @@ fn main() {
     Err(e) => print_err(& Conf::default(), e, true)
   }
 }
-
 
 
 fn load_instance(conf: & mut Conf, tools: Vec<ToolConf>) -> Res<Instance> {

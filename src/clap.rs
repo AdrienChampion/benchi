@@ -382,10 +382,6 @@ sequentially\
         int_validator
       )
     ).arg(
-      Arg::with_name("log_out").long("--log_output").help(
-        "Log the output of the runs"
-      )
-    ).arg(
       Arg::with_name("BENCHS").help(
         "\
 The file containing the inputs to give to the tools. Optional, can be
@@ -434,6 +430,7 @@ impl<'a> Matches<'a> {
       self.secondary.value_of(name)
     }
   }
+  #[allow(unused)]
   fn sub_is_present(& self, sub: & str, name: & str) -> bool {
     if let Some(matches) = self.primary.subcommand_matches(sub) {
       if matches.is_present(name) {
@@ -481,7 +478,6 @@ impl<'a> Matches<'a> {
 
   // Run options, except the tool file.
   fn clap_run(& self, conf: & mut Conf) -> Res<()> {
-    conf.log_output = self.sub_is_present("run", "log_out") ;
 
     // Bench and tool parallel settings.
     conf.bench_par = self.sub_value_of("run", "para_benchs").map(

@@ -13,6 +13,18 @@ pub use std::sync::mpsc::{
   channel, Sender, Receiver, RecvError, TryRecvError
 } ;
 
+/// Sets the pipes for a command.
+#[cfg(not(windows))]
+pub fn set_pipes(cmd: & mut Command, out_file: File, err_file: File) {
+  use std::os::unix::io::{ IntoRawFd, FromRawFd } ;
+  let out = unsafe { Stdio::from_raw_fd(out_file.into_raw_fd()) } ;
+  let err = unsafe { Stdio::from_raw_fd(err_file.into_raw_fd()) } ;
+  cmd.stdout(out) ;
+  cmd.stderr(err) ;
+  cmd.stdin( Stdio::null() ) ;
+}
+
+
 /// Kills a process from its pid.
 #[cfg(not(windows))]
 pub fn kill_process(pid: u32) {
@@ -45,14 +57,7 @@ pub fn bench_to_tool_channel() -> (
 }
 
 /// Output of a process.
-pub struct Output {
-  /// Exit status if not timeout.
-  pub status: Option<ExitStatus>,
-  /// Stdout.
-  pub stdout: Vec<u8>,
-  /// Stderr.
-  pub stderr: Vec<u8>,
-}
+pub type Output = Option<ExitStatus> ;
 
 /// Result of a run.
 pub struct RunRes<T> {

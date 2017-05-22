@@ -95,8 +95,6 @@ pub struct Conf {
   pub quiet: bool,
   /// Verbose mode?
   pub verb: bool,
-  /// Log output?
-  pub log_output: bool,
   /// Trying?
   pub try: Option<usize>,
   /// Emphasis style.
@@ -120,7 +118,6 @@ impl Default for Conf {
       bench_file: "bench.file".into(),
       quiet: false,
       verb: false,
-      log_output: false,
       try: None,
       emph: Style::new().bold(),
       hap: Colour::Green.normal(),
@@ -136,7 +133,7 @@ impl Conf {
     bench_par: usize, tool_par: usize,
     timeout: Duration,
     out_dir: String, tool_file: String, bench_file: Option<String>,
-    quiet: bool, verb: bool, log_output: bool, try: Option<usize>,
+    quiet: bool, verb: bool, try: Option<usize>,
     colored: bool,
   ) -> Self {
     let mut conf = Conf {
@@ -144,7 +141,7 @@ impl Conf {
       out_dir, tool_file, bench_file: bench_file.expect(
         "optional bench file is unimplemented"
       ),
-      quiet, verb, log_output, try,
+      quiet, verb, try,
       emph: Style::new(),
       hap: Style::new(),
       sad: Style::new(),
@@ -327,6 +324,78 @@ impl Instance {
   #[inline]
   pub fn safe_name_for_bench(& self, index: BenchIndex) -> String {
     format!("{:0>1$}", * index, format!("{}", self.benchs.len()).len())
+  }
+
+  /// Stderr directory path of a tool.
+  #[inline]
+  pub fn err_path_of_tool(
+    & self, conf: & Arc<Conf>, tool: ToolIndex
+  ) -> PathBuf {
+    let mut path = PathBuf::from( & conf.out_dir ) ;
+    path.push( & self[tool].short ) ;
+    path.push("err") ;
+    path
+  }
+  /// Stdout directory path of a tool.
+  #[inline]
+  pub fn out_path_of_tool(
+    & self, conf: & Arc<Conf>, tool: ToolIndex
+  ) -> PathBuf {
+    let mut path = PathBuf::from( & conf.out_dir ) ;
+    path.push( & self[tool].short ) ;
+    path.push("out") ;
+    path
+  }
+
+  /// Path to the stderr of a tool on a bench.
+  #[inline]
+  pub fn err_path_of(
+    & self, conf: & Arc<Conf>, tool: ToolIndex, bench: BenchIndex
+  ) -> PathBuf {
+    let mut path = self.err_path_of_tool(conf, tool) ;
+    path.push( self.safe_name_for_bench(bench) ) ;
+    path
+  }
+
+  /// Path to the stdout of a tool on a bench.
+  #[inline]
+  pub fn out_path_of(
+    & self, conf: & Arc<Conf>, tool: ToolIndex, bench: BenchIndex
+  ) -> PathBuf {
+    let mut path = self.out_path_of_tool(conf, tool) ;
+    path.push( self.safe_name_for_bench(bench) ) ;
+    path
+  }
+
+  /// Creates the error path of a tool.
+  #[inline]
+  pub fn mk_err_dir(
+    & self, conf: & Arc<Conf>, tool: ToolIndex
+  ) -> Res<()> {
+    mk_dir( self.err_path_of_tool(conf, tool) ).chain_err(
+      || format!(
+        "while creating err directory for {}",
+        conf.emph( & self[tool].name )
+      )
+    )
+  }
+  /// Creates the output path of a tool.
+  #[inline]
+  pub fn mk_out_dir(
+    & self, conf: & Arc<Conf>, tool: ToolIndex
+  ) -> Res<()> {
+    mk_dir( self.out_path_of_tool(conf, tool) ).chain_err(
+      || format!(
+        "while creating output directory for {}",
+        conf.emph( & self[tool].name )
+      )
+    )
+  }
+
+  /// Checks if a bench index is the last one.
+  #[inline]
+  pub fn is_last_bench(& self, bench: BenchIndex) -> bool {
+    * bench + 1 >= self.benchs.len()
   }
 }
 impl Index<BenchIndex> for Instance {
