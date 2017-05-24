@@ -341,7 +341,7 @@ set style line 4 lt 4 dt 3 lw 3 pt 3 linecolor rgb "0x0000CC"
 set style line 5 lt 5 dt 5 lw 3 pt 3 linecolor rgb "0xFF8000"
 
 
-set xlabel "Number of benchmarks solved" textcolor rgbcolor "0x000000"
+set xlabel "Benchmark passed" textcolor rgbcolor "0x000000"
 set ylabel "Time in seconds" textcolor rgbcolor "0x000000"
 set key bottom right
 set xtics 1
