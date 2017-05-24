@@ -154,7 +154,7 @@ impl ToolRun {
     & self, tool: ToolIndex, bench: BenchIndex
   ) -> Res<File> {
     let path = self.instance.err_path_of(& self.conf, tool, bench) ;
-    open_file_writer(path).chain_err(
+    self.conf.open_file_writer(path).chain_err(
       || format!(
         "while opening error file to write stderr \
         of {} running on {}",
@@ -168,7 +168,7 @@ impl ToolRun {
     & self, tool: ToolIndex, bench: BenchIndex
   ) -> Res<File> {
     let path = self.instance.out_path_of(& self.conf, tool, bench) ;
-    open_file_writer(path).chain_err(
+    self.conf.open_file_writer(path).chain_err(
       || format!(
         "while opening error file to write stderr \
         of {} running on {}",
@@ -363,7 +363,9 @@ impl Master {
       let mut path = PathBuf::new() ;
       path.push(& conf.out_dir) ;
       path.push( format!("{}.data", instance[tool].short) ) ;
-      let mut tool_file = open_file_writer( path.as_path() ).chain_err(
+      let mut tool_file = conf.open_file_writer(
+        path.as_path()
+      ).chain_err(
         || format!(
           "while creating file `{}`, data file for `{}`",
           conf.sad(
@@ -420,7 +422,7 @@ impl Master {
             } else {
               // Disconnected, keep going.
               print_err(
-                self.conf.gconf(),
+                & * self.conf,
                 format!("lost contact with bench run {}", index).into(),
                 false
               ) ;
@@ -428,7 +430,7 @@ impl Master {
               continue 'bench_run_msgs
             },
             Ok( Err(e) ) => {
-              print_err(self.conf.gconf(), e, false) ;
+              print_err(& * self.conf, e, false) ;
               println!("") ;
               continue 'bench_run_msgs
             },
@@ -525,7 +527,7 @@ impl Master {
               ) ;
             },
             Err(e) => {
-              print_err(self.conf.gconf(), e, false) ;
+              print_err(& * self.conf, e, false) ;
               println!("")
             },
           }

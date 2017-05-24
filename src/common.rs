@@ -75,16 +75,6 @@ macro_rules! warn {
   )
 }
 
-/// Opens a file in write mode.
-#[inline]
-pub fn open_file_writer<P: AsRef<Path>>(path: P) -> Res<File> {
-  ::std::fs::OpenOptions::new()
-  .write(true)
-  .create_new(true)
-  .open( path.as_ref() )
-  .map_err( |e| e.into() )
-}
-
 /// Creates a directory if not already there.
 #[inline]
 pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
@@ -99,7 +89,7 @@ pub enum Clap {
   /// Run mode.
   Run(RunConf, Vec<ToolConf>),
   /// Cumulative plot.
-  CumulPlot(GConf, Vec<String>),
+  CumulPlot(PlotConf, Vec<String>),
 }
 
 
@@ -205,6 +195,32 @@ impl VerbExt for Verb {
 }
 
 
+/// Has a global conf.
+pub trait GConfExt {
+  /// The global conf.
+  #[inline]
+  fn gconf(& self) -> & GConf ;
+  /// Opens a file in write mode.
+  #[inline]
+  fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
+    let conf = self.gconf() ;
+    let mut options = ::std::fs::OpenOptions::new() ;
+    options.write(true) ;
+    if conf.ow_files {
+      options.create(true).truncate(true) ;
+    } else {
+      options.create_new(true) ;
+    }
+    options.open( path.as_ref() ).map_err( |e| e.into() )
+  }
+}
+impl<T: GConfExt> ColorExt for T {
+  fn styles(& self) -> & Styles { & self.gconf().styles }
+}
+impl<T: GConfExt> VerbExt for T {
+  fn verb(& self) -> & Verb { & self.gconf().verb }
+}
+
 /// Global configuration.
 #[derive(Debug, Default, Clone)]
 pub struct GConf {
@@ -212,29 +228,42 @@ pub struct GConf {
   verb: Verb,
   /// Styles.
   styles: Styles,
+  /// Overwrite files when present.
+  pub ow_files: bool,
 }
-// impl Default for GConf {
-//   fn default() -> Self {
-//     GConf { verb: Verb::Default }
-//   }
-// }
-impl ColorExt for GConf {
-  fn styles(& self) -> & Styles { & self.styles }
-}
-impl VerbExt for GConf {
-  fn verb(& self) -> & Verb { & self.verb }
+impl GConfExt for GConf {
+  fn gconf(& self) -> & GConf { self }
 }
 impl GConf {
   /// Creates a configuration.
   #[inline]
-  pub fn mk(verb: Verb, colored: bool) -> Self {
-    GConf { verb, styles: Styles::mk(colored) }
+  pub fn mk(verb: Verb, colored: bool, ow_files: bool) -> Self {
+    GConf { verb, styles: Styles::mk(colored), ow_files }
+  }
+}
+
+
+/// Plot configuration.
+pub struct PlotConf {
+  /// Output file.
+  pub file: String,
+  /// Global conf.
+  gconf: GConf,
+}
+impl GConfExt for PlotConf {
+  fn gconf(& self) -> & GConf { & self.gconf }
+}
+impl PlotConf {
+  /// Creates a plot conf.
+  #[inline]
+  pub fn mk(file: String, gconf: GConf) -> Self {
+    PlotConf { file, gconf }
   }
 }
 
 
 /// Run configuration.
-#[derive(Debug  )]
+#[derive(Debug)]
 pub struct RunConf {
   /// Number of parallel bench runs.
   pub bench_par: usize,
@@ -253,11 +282,8 @@ pub struct RunConf {
   /// Global configuration.
   gconf: GConf,
 }
-impl ColorExt for RunConf {
-  fn styles(& self) -> & Styles { self.gconf.styles() }
-}
-impl VerbExt for RunConf {
-  fn verb(& self) -> & Verb { self.gconf.verb() }
+impl GConfExt for RunConf {
+  fn gconf(& self) -> & GConf { & self.gconf }
 }
 impl Default for RunConf {
   fn default() -> Self {
@@ -287,124 +313,9 @@ impl RunConf {
       gconf
     }
   }
-  /// Internal global configuration.
-  #[inline]
-  pub fn gconf(& self) -> & GConf {
-    & self.gconf
-  }
 }
 
 
-/// Configuration structure.
-#[derive(Debug)]
-pub struct Conf {
-  /// Number of parallel bench runs.
-  pub bench_par: usize,
-  /// Number of parallel tool runs.
-  pub tool_par: usize,
-  /// Timeout.
-  pub timeout: Duration,
-  /// Output directory.
-  pub out_dir: String,
-  /// Tool configuration file.
-  pub tool_file: String,
-  /// Benchmark file.
-  pub bench_file: String,
-  /// Quiet mode?
-  pub quiet: bool,
-  /// Verbose mode?
-  pub verb: bool,
-  /// Trying?
-  pub try: Option<usize>,
-  /// Emphasis style.
-  emph: Style,
-  /// Happy style.
-  hap: Style,
-  /// Sad style.
-  sad: Style,
-  /// Bad style.
-  bad: Style,
-}
-unsafe impl Sync for Conf {}
-impl Default for Conf {
-  fn default() -> Self {
-    Conf {
-      bench_par: 1,
-      tool_par: 1,
-      timeout: Duration::new(60, 0),
-      out_dir: ".".into(),
-      tool_file: "tools.conf".into(),
-      bench_file: "bench.file".into(),
-      quiet: false,
-      verb: false,
-      try: None,
-      emph: Style::new().bold(),
-      hap: Colour::Green.normal(),
-      sad: Colour::Yellow.normal(),
-      bad: Colour::Red.normal(),
-    }
-  }
-}
-impl Conf {
-  /// Creates a configuration.
-  #[inline]
-  pub fn mk(
-    bench_par: usize, tool_par: usize,
-    timeout: Duration,
-    out_dir: String, tool_file: String, bench_file: Option<String>,
-    quiet: bool, verb: bool, try: Option<usize>,
-    colored: bool,
-  ) -> Self {
-    let mut conf = Conf {
-      bench_par, tool_par, timeout,
-      out_dir, tool_file, bench_file: bench_file.expect(
-        "optional bench file is unimplemented"
-      ),
-      quiet, verb, try,
-      emph: Style::new(),
-      hap: Style::new(),
-      sad: Style::new(),
-      bad: Style::new(),
-    } ;
-    conf.coloring(colored) ;
-    conf
-  }
-  /// Sets the coloring.
-  pub fn coloring(& mut self, colored: bool) {
-    self.emph = if colored {
-      Style::new().bold()
-    } else { Style::new() } ;
-    self.hap = if colored {
-      Colour::Green.normal().bold()
-    } else { Style::new() } ;
-    self.sad = if colored {
-      Colour::Yellow.normal().bold()
-    } else { Style::new() } ;
-    self.bad = if colored {
-      Colour::Red.normal().bold()
-    } else { Style::new() } ;
-  }
-  /// String emphasis.
-  #[inline]
-  pub fn emph<S: AsRef<str>>(& self, s: S) -> String {
-    format!("{}", self.emph.paint(s.as_ref()))
-  }
-  /// Happy string.
-  #[inline]
-  pub fn happy<S: AsRef<str>>(& self, s: S) -> String {
-    format!("{}", self.hap.paint(s.as_ref()))
-  }
-  /// Sad string.
-  #[inline]
-  pub fn sad<S: AsRef<str>>(& self, s: S) -> String {
-    format!("{}", self.sad.paint(s.as_ref()))
-  }
-  /// Bad string.
-  #[inline]
-  pub fn bad<S: AsRef<str>>(& self, s: S) -> String {
-    format!("{}", self.bad.paint(s.as_ref()))
-  }
-}
 
 
 /// A tool configuration.

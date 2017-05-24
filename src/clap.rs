@@ -238,18 +238,22 @@ pub fn work() -> Res< Clap > {
       primary: & matches, secondary: Some(& file_matches)
     } ;
     return Ok( Clap::Run(matches.clap_run(conf)?, tools) )
-  } 
+  }
 
   if let Some(plot_matches) = matches.subcommand_matches("plot") {
+    let file = plot_matches.value_of("FILE").expect(
+      "unreachable(plot:cumul:FILE): required"
+    ).to_string() ;
     
     if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
-      let mut files = vec![] ;
-      for file in cumul_matches.values_of("DATA").expect(
-        "unreachable(plot:cumul:DATA): default is provided"
+      let mut data_files = vec![] ;
+      for data_file in cumul_matches.values_of("DATA").expect(
+        "unreachable(plot:cumul:DATA): required"
       ) {
-        files.push( file.to_string() )
+        data_files.push( data_file.to_string() )
       }
-      return Ok( Clap::CumulPlot(conf, files) )
+
+      return Ok( Clap::CumulPlot(PlotConf::mk(file, conf), data_files) )
     }
   }
 
@@ -291,6 +295,10 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
       crate_authors!()
     ).about(
       "`benchi` is a customizable benchmarking tool."
+    ).arg(
+      Arg::with_name("force").short("-f").help(
+        "When writing a file, overwrite if present"
+      )
     ).arg(
       Arg::with_name("quiet").short("-q").help(
         "No output, except errors"
@@ -392,13 +400,19 @@ specified in the configuration file.\
 
     let app = SubCommand::with_name("plot").about(
       "Generates a plot."
+    ).arg(
+      Arg::with_name("FILE").help(
+        "\
+output plot file\
+        "
+      ).required(true).index(1)
     ).subcommand(
       SubCommand::with_name("cumul").about(
         "Generates a cumulative plot"
       ).arg(
         Arg::with_name("DATA").help(
           "\
-The data files to use for plot generation.\
+data files to use for plot generation\
           "
         ).multiple(true).required(true)
       )
@@ -467,6 +481,9 @@ impl<'a> Matches<'a> {
 
   /// Main options.
   fn clap_main(& self) -> GConf {
+    // File overwrite.
+    let ow_files = self.is_present("force") ;
+
     // Quiet / verbose.
     let verb = if self.is_present_in_primary("quiet") {
       Verb::Quiet
@@ -491,7 +508,7 @@ impl<'a> Matches<'a> {
       "unreachable(colored): default is provided and input validated in clap"
     ) ;
 
-    GConf::mk(verb, colored)
+    GConf::mk(verb, colored, ow_files)
   }
 
   // Run options, except the tool file.

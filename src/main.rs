@@ -84,8 +84,8 @@ pub mod errors {
   }
 
   /// Prints an error and exits.
-  fn write_err_exit<W: Write>(
-    conf: & GConf, err: & Error, w: & mut W
+  fn write_err_exit<C: ColorExt, W: Write>(
+    conf: & C, err: & Error, w: & mut W
   ) -> ::std::io::Result<()> {
     let (head, indent) = (
       conf.bad("|===| "), conf.bad("| ")
@@ -101,10 +101,10 @@ pub mod errors {
   }
 
   /// Prints an error.
-  pub fn print_one_err(conf: & GConf, err: Error) {
+  pub fn print_one_err<C: ColorExt>(conf: & C, err: Error) {
     let stderr = & mut ::std::io::stderr() ;
 
-    if let Err(io_e) = write_err_exit(& conf, & err, stderr) {
+    if let Err(io_e) = write_err_exit(conf, & err, stderr) {
       println!(
         "An error occured, but writing to stderr {}:", conf.bad("failed")
       ) ;
@@ -112,7 +112,7 @@ pub mod errors {
       println!("") ;
 
       let stdout = & mut ::std::io::stdout() ;
-      if let Err(io_e) = write_err_exit(& conf, & err, stdout) {
+      if let Err(io_e) = write_err_exit(conf, & err, stdout) {
         println!(
           "Writing to stdout {}:", conf.bad("also failed")
         ) ;
@@ -128,7 +128,7 @@ pub mod errors {
 
 
   /// Prints an error and exits if `exit` is true.
-  pub fn print_err(conf: & GConf, err: Error, exit: bool) {
+  pub fn print_err<C: ColorExt>(conf: & C, err: Error, exit: bool) {
     print_one_err(conf, err) ;
     if exit {
       ::std::process::exit(2)
@@ -218,7 +218,7 @@ fn main() {
       let instance = match load_instance(& mut conf, tools) {
         Ok(instance) => instance,
         Err(e) => {
-          print_err(conf.gconf(), e, true) ;
+          print_err(& conf, e, true) ;
           unreachable!()
         },
       } ;
@@ -228,7 +228,7 @@ fn main() {
       ) ;
 
       if let Err(e) = work( conf.clone(), instance.clone() ) {
-        print_err(conf.gconf(), e, true)
+        print_err(& * conf, e, true)
       } else {
         ::std::process::exit(0)
       }
