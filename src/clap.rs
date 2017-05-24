@@ -119,7 +119,7 @@ macro_rules! while_opening {
 }
 
 /// Loads the tool file.
-fn load_conf<F: AsRef<Path>>(conf: & Conf, tool_file: F) -> Res<
+fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
   ( Vec<ToolConf>, ArgMatches<'static> )
 > {
   use std::io::Read ;
@@ -133,7 +133,7 @@ fn load_conf<F: AsRef<Path>>(conf: & Conf, tool_file: F) -> Res<
   ) ;
 
   let (options, tool_confs) = try!(
-    ::parse::work(& conf, & buff)
+    ::parse::work(& GConf::default(), & buff)
   ) ;
 
   // Make sure names are unique.
@@ -187,7 +187,7 @@ fn load_conf<F: AsRef<Path>>(conf: & Conf, tool_file: F) -> Res<
     }
   }
 
-  let option_clap = App::main_opts(true).run_opts(1, None, true) ;
+  let option_clap = App::main_opts().run_opts(1, None) ;
   let matches = match option_clap.get_matches_from_safe(& actual_options) {
     Ok(matches) => matches,
     Err(e) => {
@@ -212,64 +212,54 @@ fn load_conf<F: AsRef<Path>>(conf: & Conf, tool_file: F) -> Res<
 
 
 /// Clap.
-pub fn work() -> Res< (Conf, Vec<ToolConf>) > {
+pub fn work() -> Res< Clap > {
   use clap_lib::* ;
 
-  let matches: ArgMatches = App::main_opts(true).run_opts(
+  let matches = App::main_opts().run_opts(
     2, Some(
       Arg::with_name("CONF").help(
         "The configuration file (see `benchi conf -h` for details)"
       ).required(true).index(1)
-    ), true
-  ).get_matches() ;
+    )
+  ).plot_opts().get_matches() ;
 
-  let mut conf = Conf::default() ;
-
-  let colored = matches.value_of("colored").and_then(
-    |s| bool_of_str(& s)
-  ).expect(
-    "unreachable(colored): default is provided and input validated in clap"
-  ) ;
-  conf.coloring(colored) ;
+  let conf = {
+    Matches { primary: & matches, secondary: None }.clap_main()
+  } ;
 
   if let Some(run_matches) = matches.subcommand_matches("run") {
     let tool_file = run_matches.value_of("CONF").expect(
-      "unreachable(CONF): default is provided"
+      "unreachable(CONF): required"
     ).to_string() ;
     let (tools, file_matches) = try!(
       load_conf(& conf, tool_file)
     ) ;
-    let matches = Matches { primary: & matches, secondary: & file_matches } ;
-    matches.clap_main(& mut conf) ;
-    try!( matches.clap_run(& mut conf) ) ;
-    Ok( (conf, tools) )
-  } else {
-    let msg = format!(
-      "anything else that the {} subcommand", conf.emph("run")
-    ) ;
-    bail!(
-      ::errors::ErrorKind::Unimpl( Arc::new(conf), msg )
-    )
+    let matches = Matches {
+      primary: & matches, secondary: Some(& file_matches)
+    } ;
+    return Ok( Clap::Run(matches.clap_run(conf)?, tools) )
+  } 
+
+  if let Some(plot_matches) = matches.subcommand_matches("plot") {
+    
+    if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
+      let mut files = vec![] ;
+      for file in cumul_matches.values_of("DATA").expect(
+        "unreachable(plot:cumul:DATA): default is provided"
+      ) {
+        files.push( file.to_string() )
+      }
+      return Ok( Clap::CumulPlot(conf, files) )
+    }
   }
 
-  // clap_main(& matches, & mut conf) ;
-
-  // // Run mode.
-  // if let Some(matches) = matches.subcommand_matches("run") {
-  //   clap_run(& matches, & mut conf) ;
-  //   // Conf file.
-  //   conf.tool_file = matches.value_of("CONF").expect(
-  //     "unreachable(CONF): default is provided"
-  //   ).to_string() ;
-  //   Ok(conf)
-  // } else {
-  //   let msg = format!(
-  //     "anything else that the {} subcommand", conf.emph("run")
-  //   ) ;
-  //   bail!(
-  //     ::errors::ErrorKind::Unimpl( Arc::new(conf), msg )
-  //   )
-  // }
+  let msg = format!(
+    "anything else that the {} or {} subcommands",
+    conf.emph("run"), conf.emph("plot")
+  ) ;
+  bail!(
+    ::errors::ErrorKind::Unimpl( conf, msg )
+  )
 
 }
 
@@ -279,18 +269,19 @@ pub fn work() -> Res< (Conf, Vec<ToolConf>) > {
 trait AppExt {
   type Argument ;
   /// Adds the main options.
-  fn main_opts(defaults: bool) -> Self ;
+  fn main_opts() -> Self ;
   /// Adds the `run` options, except `conf`.
   ///
   /// `bench_index` is the index to give to the bench option.
   fn run_opts(
     self, bench_index: u64, add_arg: Option<Self::Argument>,
-    defaults: bool
   ) -> Self ;
+  /// Adds the `plot` options.
+  fn plot_opts(self) -> Self ;
 }
 impl<'a, 'b> AppExt for App<'a, 'b> {
   type Argument = Arg<'a, 'b> ;
-  fn main_opts(defaults: bool) -> Self {
+  fn main_opts() -> Self {
     use clap_lib::* ;
     App::new(
       crate_name!()
@@ -301,31 +292,22 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
     ).about(
       "`benchi` is a customizable benchmarking tool."
     ).arg(
-      Arg::with_name("out_dir").short("-o").long("--out_dir").help(
-        "\
-Sets the output directory. If the path ends with `today` (`now`), then `today`
-(`now`) will be replaced with `<y>_<m>_<d>` (`<y>_<m>_<d>_at_<h><min>`)
-representing the current date (and time).\
-        "
-      ).value_name("dir").default_if("./", defaults).takes_value(true)
-    ).arg(
       Arg::with_name("quiet").short("-q").help(
         "No output, except errors"
       ).conflicts_with("verbose")
     ).arg(
       Arg::with_name("verbose").short("-v").help(
-        "More verbose output"
+        "Verbose output"
       ).conflicts_with("quiet")
     ).arg(
       Arg::with_name("colored").short("-c").long("--color").help(
         "Colored output"
-      ).default_if("on", defaults).takes_value(true).validator(bool_validator)
+      ).default_value("on").takes_value(true).validator(bool_validator)
     )
   }
 
   fn run_opts(
     self, bench_index: u64, add_arg: Option<Arg<'a, 'b>>,
-    defaults: bool
   ) -> Self {
     use clap_lib::* ;
 
@@ -339,7 +321,8 @@ number of benchmarks handled in parallel.
 
 So, with `--benchs 2` and `--tools 3`, 6 (2*3) threads will handle up to 2
 benchmarks simultaneously, with up to 3 tools running in parallel on each of
-them.
+them. There's actually more threads than that do organize everything, but only
+6 of them really run tools.
                      ___________master___________
                     |                            |
                ___bench___                  ___bench___
@@ -354,25 +337,29 @@ the same time
 sequentially\
       "
     ).arg(
+      Arg::with_name("out_dir").short("-o").long("--out_dir").help(
+        "\
+Sets the output directory. If the path ends with `today` (`now`), then `today`
+(`now`) will be replaced with `<y>_<m>_<d>` (`<y>_<m>_<d>_at_<h><min>`)
+representing the current date (and time).\
+        "
+      ).value_name("dir").default_value("./").takes_value(true)
+    ).arg(
       Arg::with_name("timeout").short("-t").long("--timeout").help(
         "Sets the timeout for each run"
       ).value_name(tmo_format).validator(
         tmo_validator
-      ).default_if("1min", defaults).takes_value(true)
+      ).default_value("1min").takes_value(true)
     ).arg(
       Arg::with_name("para_benchs").long("--benchs").help(
         "Number of benchmarks to run in parallel"
-      ).value_name("int").default_if(
-        "1", defaults
-      ).takes_value(true).validator(
+      ).value_name("int").default_value("1").takes_value(true).validator(
         int_validator
       )
     ).arg(
       Arg::with_name("para_tools").long("--tools").help(
         "Number of tools to run in parallel on each benchmark"
-      ).value_name("int").default_if(
-        "1", defaults
-      ).takes_value(true).validator(
+      ).value_name("int").default_value("1").takes_value(true).validator(
         int_validator
       )
     ).arg(
@@ -397,17 +384,32 @@ specified in the configuration file.\
     } ;
     self.subcommand(app)
   }
-}
 
+  fn plot_opts(
+    self
+  ) -> Self {
+    use clap_lib::* ;
 
-/// Extends `clap`'s `Arg`.
-trait ArgExt {
-  /// Adds a default value if the flag is true.
-  fn default_if(self, default: & 'static str, do_it: bool) -> Self ;
-}
-impl ArgExt for Arg<'static, 'static> {
-  fn default_if(self, default: & 'static str, do_it: bool) -> Self {
-    if do_it { self.default_value(default) } else { self }
+    let app = SubCommand::with_name("plot").about(
+      "Generates a plot."
+    ).subcommand(
+      SubCommand::with_name("cumul").about(
+        "Generates a cumulative plot"
+      ).arg(
+        Arg::with_name("DATA").help(
+          "\
+The data files to use for plot generation.\
+          "
+        ).multiple(true).required(true)
+      )
+    ) ;
+
+    // let app = if let Some(arg) = add_arg {
+    //   app.arg(arg)
+    // } else {
+    //   app
+    // } ;
+    self.subcommand(app)
   }
 }
 
@@ -417,20 +419,21 @@ impl ArgExt for Arg<'static, 'static> {
 /// found** the secondary one.
 struct Matches<'a> {
   primary: & 'a ArgMatches<'static>,
-  secondary: & 'a ArgMatches<'static>,
+  secondary: Option< & 'a ArgMatches<'static> >,
 }
 impl<'a> Matches<'a> {
   fn is_present(& self, name: & str) -> bool {
-    self.primary.is_present(name) || self.secondary.is_present(name)
+    self.primary.is_present(name) ||
+    self.secondary.map(|m| m.is_present(name)).unwrap_or(false)
   }
   fn is_present_in_primary(& self, name: & str) -> bool {
     self.primary.is_present(name)
   }
   fn value_of(& self, name: & str) -> Option<&str> {
-    if self.primary.occurrences_of(name) > 0 {
+    if self.primary.occurrences_of(name) > 0 || self.secondary.is_none() {
       self.primary.value_of(name)
     } else {
-      self.secondary.value_of(name)
+      self.secondary.and_then(|m| m.value_of(name))
     }
   }
   #[allow(unused)]
@@ -440,8 +443,10 @@ impl<'a> Matches<'a> {
         return true
       }
     }
-    self.secondary.subcommand_matches(sub).map(
-      |matches| matches.is_present(name)
+    self.secondary.map(
+      |m| m.subcommand_matches(sub).map(
+        |matches| matches.is_present(name)
+      ).unwrap_or(false)
     ).unwrap_or(false)
   }
   fn sub_value_of(
@@ -449,54 +454,63 @@ impl<'a> Matches<'a> {
   ) -> Option<String> {
     match (
       self.primary.subcommand_matches(sub),
-      self.secondary.subcommand_matches(sub)
+      self.secondary.and_then(|m| m.subcommand_matches(sub))
     ) {
       (None, None) => None,
       (Some(p), Some(s)) => Matches {
-        primary: p, secondary: s
+        primary: p, secondary: Some(s)
       }.value_of(name).map(|s| s.to_string()),
       (Some(p), None) => p.value_of(name).map(|s| s.to_string()),
       (None, Some(s)) => s.value_of(name).map(|s| s.to_string()),
     }
   }
+
   /// Main options.
-  fn clap_main(& self, conf: & mut Conf) {
+  fn clap_main(& self) -> GConf {
     // Quiet / verbose.
-    if self.is_present_in_primary("quiet") {
-      conf.quiet = true
+    let verb = if self.is_present_in_primary("quiet") {
+      Verb::Quiet
     } else if self.is_present_in_primary("verbose") {
-      conf.verb = true
+      Verb::Verbose
     } else {
-      conf.quiet = self.is_present("quiet") ;
-      conf.verb = self.is_present("verbose")
-    }
+      if self.is_present("quiet") {
+        Verb::Quiet
+      } else if self.is_present("verbose") {
+        Verb::Verbose
+      } else {
+        Verb::Normal
+      }
+    } ;
 
     // Colored.
     let colored = self.value_of("colored").and_then(
-      |s| bool_of_str(& s)
+      |s| {
+        bool_of_str(& s)
+      }
     ).expect(
       "unreachable(colored): default is provided and input validated in clap"
     ) ;
-    conf.coloring(colored) ;
 
-    // Output directory.
-    conf.out_dir = self.value_of("out_dir").expect(
-      "unreachable(out_dir): default is provided"
-    ).to_string() ;
+    GConf::mk(verb, colored)
   }
 
   // Run options, except the tool file.
-  fn clap_run(& self, conf: & mut Conf) -> Res<()> {
+  fn clap_run(& self, conf: GConf) -> Res<RunConf> {
+
+    // Output directory.
+    let out_dir = self.sub_value_of("run", "out_dir").expect(
+      "unreachable(out_dir): default is provided"
+    ).to_string() ;
 
     // Bench and tool parallel settings.
-    conf.bench_par = self.sub_value_of("run", "para_benchs").map(
+    let bench_par = self.sub_value_of("run", "para_benchs").map(
       |s| usize::from_str(& s)
     ).expect(
       "unreachable(bench_par): default is provided"
     ).expect(
       "unreachable(bench_par): input validated in clap"
     ) ;
-    conf.tool_par = self.sub_value_of("run", "para_tools").map(
+    let tool_par = self.sub_value_of("run", "para_tools").map(
       |s| usize::from_str(& s)
     ).expect(
       "unreachable(tool_par): default is provided"
@@ -504,23 +518,27 @@ impl<'a> Matches<'a> {
       "unreachable(tool_par): input validated in clap"
     ) ;
 
-    conf.try = self.sub_value_of("run", "try").map(
+    let try = self.sub_value_of("run", "try").map(
       |s| usize::from_str(& s).expect(
         "unreachable(tool_par): input validated in clap"
       )
     ) ;
 
     // Timeout.
-    conf.timeout = self.sub_value_of("run", "timeout").map(
+    let timeout = self.sub_value_of("run", "timeout").map(
       |s| tmo_of_str(& s)
     ).expect(
       "unreachable(timeout): default is provided"
     ).expect(
       "unreachable(timeout): input validated in clap"
     ) ;
+    
+    let tool_file = self.sub_value_of("run", "CONF").expect(
+      "unreachable(CONF): required"
+    ).to_string() ;
 
     // Bench file.
-    conf.bench_file = if let Some(f) = self.sub_value_of("run", "BENCHS") {
+    let bench_file = if let Some(f) = self.sub_value_of("run", "BENCHS") {
       f
     } else {
       bail!(
@@ -528,6 +546,12 @@ impl<'a> Matches<'a> {
       )
     } ;
 
-    Ok(())
+    Ok(
+      RunConf::mk(
+        bench_par, tool_par, timeout, try,
+        out_dir, tool_file, bench_file,
+        conf
+      )
+    )
   }
 }

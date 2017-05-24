@@ -19,7 +19,7 @@ use self::para::* ;
 /// Lowest level in the hierarchy, runs a tool on a benchmark.
 pub struct ToolRun {
   /// The configuration.
-  pub conf: Arc<Conf>,
+  pub conf: Arc<RunConf>,
   /// The instance.
   pub instance: Arc<Instance>,
   /// Index of this tool run for the bench run responsible for it.
@@ -36,7 +36,7 @@ impl ToolRun {
   /// Creates (but does not run) a tool run.
   #[inline]
   fn mk(
-    conf: Arc<Conf>, instance: Arc<Instance>, index: usize,
+    conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender< RunRes<(Duration, Output)> >,
     bench_run: Sender< usize >,
     from_bench_run: Receiver< (ToolIndex, BenchIndex) >,
@@ -185,7 +185,7 @@ impl ToolRun {
 /// a particular benchmark.
 pub struct BenchRun {
   /// The configuration.
-  pub conf: Arc<Conf>,
+  pub conf: Arc<RunConf>,
   /// The instance.
   pub instance: Arc<Instance>,
   /// The index of this bench run for the master.
@@ -205,7 +205,7 @@ impl BenchRun {
   /// `tool_to_master` will be given to the `ToolRun`s spawned.
   #[inline]
   fn mk(
-    conf: Arc<Conf>, instance: Arc<Instance>, index: usize,
+    conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender< Res<usize> >,
     from_master: Receiver< BenchIndex >,
     tool_to_master: Sender< RunRes<(Duration, Output)> >,
@@ -303,7 +303,7 @@ impl BenchRun {
 /// Master, iterates dispatches benchmarks.
 pub struct Master {
   /// The configuration.
-  pub conf: Arc<Conf>,
+  pub conf: Arc<RunConf>,
   /// The instance.
   pub instance: Arc<Instance>,
   /// Senders to bench runs (intermediary level).
@@ -320,7 +320,7 @@ pub struct Master {
 }
 impl Master {
   /// Creates (but does not run) a master.
-  pub fn mk(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<Self> {
+  pub fn mk(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<Self> {
     let mut bench_runs = Vec::with_capacity(conf.bench_par) ;
     // Channel to `self` shared by all **tool runs**.
     let (t2m_s, from_tool_runs) = tool_to_master_channel() ;
@@ -343,7 +343,7 @@ impl Master {
       ()
     }
 
-    let bar = if conf.quiet { None } else {
+    let bar = if conf.quiet() { None } else {
       let mut bar = ProgressBar::new(
         (instance.tool_len() as u64) * (instance.bench_len() as u64)
       ) ;
@@ -363,19 +363,22 @@ impl Master {
       let mut path = PathBuf::new() ;
       path.push(& conf.out_dir) ;
       path.push( format!("{}.data", instance[tool].short) ) ;
-      tool_files.push(
-        try!(
-          open_file_writer( path.as_path() ).chain_err(
-            || format!(
-              "while creating file `{}`, data file for `{}`",
-              conf.sad(
-                path.to_str().expect("non-UTF8 path")
-              ),
-              conf.emph( & instance[tool].name )
-            )
-          )
+      let mut tool_file = open_file_writer( path.as_path() ).chain_err(
+        || format!(
+          "while creating file `{}`, data file for `{}`",
+          conf.sad(
+            path.to_str().expect("non-UTF8 path")
+          ),
+          conf.emph( & instance[tool].name )
         )
-      )
+      ) ? ;
+      instance[tool].dump_info(& mut tool_file).chain_err(
+        || format!(
+          "while dumping info for tool `{}`",
+          conf.emph( & instance[tool].name )
+        )
+      ) ? ;
+      tool_files.push( tool_file )
     }
 
     Ok(
@@ -417,7 +420,7 @@ impl Master {
             } else {
               // Disconnected, keep going.
               print_err(
-                & * self.conf,
+                self.conf.gconf(),
                 format!("lost contact with bench run {}", index).into(),
                 false
               ) ;
@@ -425,7 +428,7 @@ impl Master {
               continue 'bench_run_msgs
             },
             Ok( Err(e) ) => {
-              print_err(& * self.conf, e, false) ;
+              print_err(self.conf.gconf(), e, false) ;
               println!("") ;
               continue 'bench_run_msgs
             },
@@ -522,7 +525,7 @@ impl Master {
               ) ;
             },
             Err(e) => {
-              print_err(& * self.conf, e, false) ;
+              print_err(self.conf.gconf(), e, false) ;
               println!("")
             },
           }

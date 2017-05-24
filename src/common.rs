@@ -5,7 +5,7 @@ use std::ops::{ Index, IndexMut, Deref } ;
 
 pub use std::process::Command ;
 pub use std::fs::File ;
-pub use std::io::{ Write, BufRead, BufReader } ;
+pub use std::io::{ Lines, Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
 pub use std::path::{ Path, PathBuf } ;
 pub use std::iter::Iterator ;
@@ -17,45 +17,62 @@ use ansi::{ Style, Colour } ;
 
 use errors::* ;
 
-/// Log macro, deactivated if `$conf`.quiet is `true`.
+/// Log macro.
 macro_rules! log {
 
-  ( | internal | => ) => (()) ;
+  ( | internal | $pref:expr => ) => (()) ;
 
-  ( | internal | => ; $($tail:tt)* ) => (
-    log!(| internal | => $($tail)*)
+  ( | internal | $pref:expr => ; $($tail:tt)* ) => (
+    log!(| internal | $pref => $($tail)*)
   ) ;
 
-  ( | internal | => let $p:pat = $e:expr ; $($tail:tt)* ) => ({
+  ( | internal | $pref:expr => let $p:pat = $e:expr ; $($tail:tt)* ) => ({
     let $p = $e ;
-    log!(| internal | => $($tail)*)
+    log!(| internal | $pref => $($tail)*)
   }) ;
 
-  ( | internal | => { $($head:tt)+ } $($tail:tt)* ) => ({
+  ( | internal | $pref:expr => { $($head:tt)+ } $($tail:tt)* ) => ({
     { $($head)+ }
-    log!(| internal | => $($tail)*)
+    log!(| internal | $pref => $($tail)*)
   }) ;
 
-  ( | internal | => $($head:expr),* ; $($tail:tt)* ) => ({
+  ( | internal | $pref:expr => $($head:expr),* ; $($tail:tt)* ) => ({
+    print!("{}", $pref) ;
     println!($($head),*) ;
-    log!(| internal | => $($tail)*)
+    log!(| internal | $pref => $($tail)*)
   }) ;
 
   (
     $conf:expr => $($stuff:tt)+
   ) => ({
-    if ! $conf.quiet {
-      log!( |internal| => $($stuff)+ ; )
+    if ! $conf.quiet() {
+      log!( |internal| "" => $($stuff)+ ; )
     }
   }) ;
 
   (
-    $conf:expr , $verb:ident => $($stuff:tt)+
+    $conf:expr , verb => $($stuff:tt)+
   ) => ({
-    if $conf.$verb {
-      log!( |internal| => $($stuff)+ ; )
+    if $conf.verbose() {
+      log!( |internal| "" => $($stuff)+ ; )
     }
   }) ;
+}
+
+/// Warning macro.
+#[macro_export]
+macro_rules! warn {
+  ($conf:expr => $($stuff:tt)+) => (
+    if ! $conf.quiet() {
+      println!("") ;
+      println!("{}:", $conf.sad("|===| Warning")) ;
+      log!{
+        |internal| $conf.sad("| ") => $($stuff)+ ;
+      }
+      println!("{}", $conf.sad("|===|")) ;
+      println!("")
+    }
+  )
 }
 
 /// Opens a file in write mode.
@@ -75,6 +92,208 @@ pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
     |e| e.into()
   )
 }
+
+
+/// Clap result.
+pub enum Clap {
+  /// Run mode.
+  Run(RunConf, Vec<ToolConf>),
+  /// Cumulative plot.
+  CumulPlot(GConf, Vec<String>),
+}
+
+
+/// Can color things.
+pub trait ColorExt {
+  /// The styles in the colorizer: emph, happy, sad, and bad.
+  #[inline]
+  fn styles(& self) -> & Styles ;
+  /// String emphasis.
+  #[inline]
+  fn emph<S: AsRef<str>>(& self, s: S) -> String {
+    format!("{}", self.styles().emph.paint(s.as_ref()))
+  }
+  /// Happy string.
+  #[inline]
+  fn happy<S: AsRef<str>>(& self, s: S) -> String {
+    format!("{}", self.styles().hap.paint(s.as_ref()))
+  }
+  /// Sad string.
+  #[inline]
+  fn sad<S: AsRef<str>>(& self, s: S) -> String {
+    format!("{}", self.styles().sad.paint(s.as_ref()))
+  }
+  /// Bad string.
+  #[inline]
+  fn bad<S: AsRef<str>>(& self, s: S) -> String {
+    format!("{}", self.styles().bad.paint(s.as_ref()))
+  }
+}
+
+
+/// Contains some styles for coloring.
+#[derive(Debug, Clone)]
+pub struct Styles {
+  /// Emphasis style.
+  emph: Style,
+  /// Happy style.
+  hap: Style,
+  /// Sad style.
+  sad: Style,
+  /// Bad style.
+  bad: Style,
+}
+impl Default for Styles {
+  fn default() -> Self { Styles::mk(true) }
+}
+impl ColorExt for Styles {
+  fn styles(& self) -> & Styles { self }
+}
+impl Styles {
+  /// Creates some styles.
+  pub fn mk(colored: bool) -> Self {
+    Styles {
+      emph: if colored {
+        Style::new().bold()
+      } else { Style::new() },
+      hap: if colored {
+        Colour::Green.normal().bold()
+      } else { Style::new() },
+      sad: if colored {
+        Colour::Yellow.normal().bold()
+      } else { Style::new() },
+      bad: if colored {
+        Colour::Red.normal().bold()
+      } else { Style::new() },
+    }
+  }
+}
+
+
+/// Has a verbosity setting.
+pub trait VerbExt {
+  /// Access to the verbosity.
+  #[inline]
+  fn verb(& self) -> & Verb ;
+  /// True if quiet.
+  #[inline]
+  fn quiet(& self) -> bool { * self.verb() == Verb::Quiet }
+  /// True if normal.
+  #[inline]
+  fn normal(& self) -> bool { * self.verb() == Verb::Normal }
+  /// True if verbose.
+  #[inline]
+  fn verbose(& self) -> bool { * self.verb() == Verb::Verbose }
+}
+
+
+/// Verbosity.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Verb {
+  /// No output.
+  Quiet,
+  /// Normal output.
+  Normal,
+  /// Verbose output.
+  Verbose,
+}
+impl Default for Verb {
+  fn default() -> Self { Verb::Normal }
+}
+impl VerbExt for Verb {
+  fn verb(& self) -> & Verb { self }
+}
+
+
+/// Global configuration.
+#[derive(Debug, Default, Clone)]
+pub struct GConf {
+  /// Verbosity.
+  verb: Verb,
+  /// Styles.
+  styles: Styles,
+}
+// impl Default for GConf {
+//   fn default() -> Self {
+//     GConf { verb: Verb::Default }
+//   }
+// }
+impl ColorExt for GConf {
+  fn styles(& self) -> & Styles { & self.styles }
+}
+impl VerbExt for GConf {
+  fn verb(& self) -> & Verb { & self.verb }
+}
+impl GConf {
+  /// Creates a configuration.
+  #[inline]
+  pub fn mk(verb: Verb, colored: bool) -> Self {
+    GConf { verb, styles: Styles::mk(colored) }
+  }
+}
+
+
+/// Run configuration.
+#[derive(Debug  )]
+pub struct RunConf {
+  /// Number of parallel bench runs.
+  pub bench_par: usize,
+  /// Number of parallel tool runs.
+  pub tool_par: usize,
+  /// Timeout.
+  pub timeout: Duration,
+  /// Output directory.
+  pub out_dir: String,
+  /// Tool configuration file.
+  pub tool_file: String,
+  /// Benchmark file.
+  pub bench_file: String,
+  /// Trying?
+  pub try: Option<usize>,
+  /// Global configuration.
+  gconf: GConf,
+}
+impl ColorExt for RunConf {
+  fn styles(& self) -> & Styles { self.gconf.styles() }
+}
+impl VerbExt for RunConf {
+  fn verb(& self) -> & Verb { self.gconf.verb() }
+}
+impl Default for RunConf {
+  fn default() -> Self {
+    RunConf {
+      bench_par: 1, tool_par: 1,
+      timeout: Duration::new(60, 0),
+      try: None,
+      out_dir: ".".into(),
+      tool_file: "tools.conf".into(),
+      bench_file: "bench.file".into(),
+      gconf: GConf::default(),
+    }
+  }
+}
+impl RunConf {
+  /// Creates a configuration.
+  #[inline]
+  pub fn mk(
+    bench_par: usize, tool_par: usize,
+    timeout: Duration, try: Option<usize>,
+    out_dir: String, tool_file: String, bench_file: String,
+    gconf: GConf,
+  ) -> Self {
+    RunConf {
+      bench_par, tool_par, timeout, try,
+      out_dir, tool_file, bench_file,
+      gconf
+    }
+  }
+  /// Internal global configuration.
+  #[inline]
+  pub fn gconf(& self) -> & GConf {
+    & self.gconf
+  }
+}
+
 
 /// Configuration structure.
 #[derive(Debug)]
@@ -202,7 +421,114 @@ pub struct ToolConf {
   // /// Optional validator.
   // pub validator: ()
 }
+static name_dump_pref:  & str = "# " ;
+static short_dump_pref: & str = "# short: " ;
+static graph_dump_pref: & str = "# graph: " ;
+static cmd_dump_pref:   & str = "# cmd: " ;
 unsafe impl Sync for ToolConf {}
+impl ToolConf {
+  /// Dumps info to a writer.
+  pub fn dump_info<W: Write>(& self, w: & mut W) -> ::std::io::Result<()> {
+    writeln!(w, "{}{}", name_dump_pref, self.name) ? ;
+    writeln!(w, "{}{}", short_dump_pref, self.short) ? ;
+    writeln!(w, "{}{}", graph_dump_pref, self.graph) ? ;
+    write!(  w, "{}", cmd_dump_pref) ? ;
+    for s in & self.cmd {
+      write!(w, "{} ", s) ?
+    }
+    writeln!(w, "") ? ;
+    writeln!(w, "#")
+  }
+  /// Loads a tool configuration from a dump.
+  pub fn from_dump<Br: BufRead>(lines: & mut Lines<Br>) -> Res<Self> {
+    let name = if let Some(line) = lines.next() {
+      let line = line ? ;
+      let len = name_dump_pref.len() ;
+      if line.len() < len + 1 || & line[0..len] != name_dump_pref {
+        bail!(
+          format!(
+            "illegal dump file, first line should be `{}<tool name>`",
+            name_dump_pref
+          )
+        )
+      } else {
+        line[len..].trim().to_string()
+      }
+    } else {
+      bail!( format!("expected tool name, found nothing") )
+    } ;
+    let short = if let Some(line) = lines.next() {
+      let line = line ? ;
+      let len = short_dump_pref.len() ;
+      if line.len() < len + 1 || & line[0..len] != short_dump_pref {
+        bail!(
+          format!(
+            "illegal dump file, second line should be \
+            `{}<tool short name>`", short_dump_pref
+          )
+        )
+      } else {
+        line[len..].trim().to_string()
+      }
+    } else {
+      bail!( format!("expected tool ({}) short name, found nothing", name) )
+    } ;
+    let graph = if let Some(line) = lines.next() {
+      let line = line ? ;
+      let len = graph_dump_pref.len() ;
+      if line.len() < len + 1 || & line[0..len] != graph_dump_pref {
+        bail!(
+          format!(
+            "illegal dump file, second line should be \
+            `{}<tool graph name>`", graph_dump_pref
+          )
+        )
+      } else {
+        line[len..].trim().to_string()
+      }
+    } else {
+      bail!( format!("expected tool ({}) graph name, found nothing", name) )
+    } ;
+    let cmd = if let Some(line) = lines.next() {
+      let line = line ? ;
+      let len = cmd_dump_pref.len() ;
+      if line.len() < len + 1 || & line[0..len] != cmd_dump_pref {
+        bail!(
+          format!(
+            "illegal dump file, second line should be \
+            `{}<tool cmd>`", cmd_dump_pref
+          )
+        )
+      } else {
+        lazy_static!{
+          static ref cmd_regex: ::regex::Regex = ::regex::Regex::new(
+            r"([^\s]*)"
+          ).unwrap() ;
+        }
+
+        let mut cmd = vec![] ;
+        let mut iter = cmd_regex.find_iter( line[len..].trim() ) ;
+        if let Some(first) = iter.next() {
+          cmd.push( first.as_str().to_string() ) ;
+          for next in iter {
+            cmd.push( next.as_str().to_string() )
+          }
+          cmd
+        } else {
+          bail!(
+            format!(
+              "command for tool `{}` is illegal", name
+            )
+          )
+        }
+      }
+    } else {
+      bail!( format!("expected tool ({}) cmd, found nothing", name) )
+    } ;
+    
+    Ok( ToolConf { name, short, graph, cmd } )
+  }
+}
 
 
 
@@ -329,7 +655,7 @@ impl Instance {
   /// Stderr directory path of a tool.
   #[inline]
   pub fn err_path_of_tool(
-    & self, conf: & Arc<Conf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> PathBuf {
     let mut path = PathBuf::from( & conf.out_dir ) ;
     path.push( & self[tool].short ) ;
@@ -339,7 +665,7 @@ impl Instance {
   /// Stdout directory path of a tool.
   #[inline]
   pub fn out_path_of_tool(
-    & self, conf: & Arc<Conf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> PathBuf {
     let mut path = PathBuf::from( & conf.out_dir ) ;
     path.push( & self[tool].short ) ;
@@ -350,7 +676,7 @@ impl Instance {
   /// Path to the stderr of a tool on a bench.
   #[inline]
   pub fn err_path_of(
-    & self, conf: & Arc<Conf>, tool: ToolIndex, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex, bench: BenchIndex
   ) -> PathBuf {
     let mut path = self.err_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -360,7 +686,7 @@ impl Instance {
   /// Path to the stdout of a tool on a bench.
   #[inline]
   pub fn out_path_of(
-    & self, conf: & Arc<Conf>, tool: ToolIndex, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex, bench: BenchIndex
   ) -> PathBuf {
     let mut path = self.out_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -370,7 +696,7 @@ impl Instance {
   /// Creates the error path of a tool.
   #[inline]
   pub fn mk_err_dir(
-    & self, conf: & Arc<Conf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> Res<()> {
     mk_dir( self.err_path_of_tool(conf, tool) ).chain_err(
       || format!(
@@ -382,7 +708,7 @@ impl Instance {
   /// Creates the output path of a tool.
   #[inline]
   pub fn mk_out_dir(
-    & self, conf: & Arc<Conf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> Res<()> {
     mk_dir( self.out_path_of_tool(conf, tool) ).chain_err(
       || format!(

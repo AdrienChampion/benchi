@@ -1,16 +1,14 @@
-options: "-o output -v run --tools 1 --benchs 1 -t 3s benchs"
+options: "-v run -o output --tools 3 --benchs 1 -t 3s benchs"
 
 find 1 {
   short: find_1
   cmd: "find / -name"
 }
-
 find 2 {
   short: find_2
-  cmd: "find /Users/uchuu -name"
+  cmd: "find . -name"
 }
-
 find 3 {
   short: find_3
-  cmd: "find . -name"
+  cmd: "find /Users/uchuu/misc -name"
 }

@@ -22,6 +22,7 @@ pub mod common ;
 pub mod clap ;
 pub mod parse ;
 pub mod run ;
+pub mod plot ;
 
 
 use common::* ;
@@ -45,7 +46,7 @@ pub mod errors {
 
     errors {
       #[doc = "Unimplemented."]
-      Unimpl(conf: Arc<Conf>, blah: String) {
+      Unimpl(conf: GConf, blah: String) {
         description("unimplemented feature")
         display(
           "feature {} is {} yet", blah, conf.sad("not implemented")
@@ -63,10 +64,11 @@ pub mod errors {
         )
       }
       #[doc = "Tool run error."]
-      ToolRun(conf: Arc<Conf>, tool: ToolConf, bench: String) {
+      ToolRun(conf: GConf, tool: ToolConf, bench: String) {
         description("error during tool run")
         display(
-          "failure while running {} on {}", conf.emph(& tool.name), bench
+          "failure while running '{}' on '{}'",
+          conf.sad(& tool.name), conf.emph(& bench)
         )
       }
     }
@@ -83,7 +85,7 @@ pub mod errors {
 
   /// Prints an error and exits.
   fn write_err_exit<W: Write>(
-    conf: & Conf, err: & Error, w: & mut W
+    conf: & GConf, err: & Error, w: & mut W
   ) -> ::std::io::Result<()> {
     let (head, indent) = (
       conf.bad("|===| "), conf.bad("| ")
@@ -99,7 +101,7 @@ pub mod errors {
   }
 
   /// Prints an error.
-  pub fn print_one_err(conf: & Conf, err: Error) {
+  pub fn print_one_err(conf: & GConf, err: Error) {
     let stderr = & mut ::std::io::stderr() ;
 
     if let Err(io_e) = write_err_exit(& conf, & err, stderr) {
@@ -126,7 +128,7 @@ pub mod errors {
 
 
   /// Prints an error and exits if `exit` is true.
-  pub fn print_err(conf: & Conf, err: Error, exit: bool) {
+  pub fn print_err(conf: & GConf, err: Error, exit: bool) {
     print_one_err(conf, err) ;
     if exit {
       ::std::process::exit(2)
@@ -155,7 +157,7 @@ macro_rules! while_opening {
 fn main() {
 
   match clap::work() {
-    Ok( (mut conf, tools) ) => {
+    Ok( Clap::Run(mut conf, tools) ) => {
 
       // Change output directory to the date if it's `"today"`.
       {
@@ -216,7 +218,7 @@ fn main() {
       let instance = match load_instance(& mut conf, tools) {
         Ok(instance) => instance,
         Err(e) => {
-          print_err(& conf, e, true) ;
+          print_err(conf.gconf(), e, true) ;
           unreachable!()
         },
       } ;
@@ -224,19 +226,28 @@ fn main() {
       let (conf, instance) = (
         Arc::new(conf), Arc::new(instance)
       ) ;
-      
+
       if let Err(e) = work( conf.clone(), instance.clone() ) {
+        print_err(conf.gconf(), e, true)
+      } else {
+        ::std::process::exit(0)
+      }
+    },
+
+    Ok( Clap::CumulPlot(conf, files) ) => {
+      if let Err(e) = plot::cumul::work(& conf, files) {
         print_err(& conf, e, true)
       } else {
         ::std::process::exit(0)
       }
     },
-    Err(e) => print_err(& Conf::default(), e, true)
+
+    Err(e) => print_err(& GConf::default(), e, true)
   }
 }
 
 
-fn load_instance(conf: & mut Conf, tools: Vec<ToolConf>) -> Res<Instance> {
+fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
 
   // Make sure names are unique.
   {
@@ -310,7 +321,11 @@ fn load_instance(conf: & mut Conf, tools: Vec<ToolConf>) -> Res<Instance> {
 
 
 
-fn work(conf: Arc<Conf>, instance: Arc<Instance>) -> Res<()> {
+fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
+  if instance.tool_len() == 0 || instance.bench_len() == 0 {
+    return Ok(())
+  }
+
   // Create output directory if it doesn't already exist.
   try!(
     mk_dir(& conf.out_dir).chain_err(
