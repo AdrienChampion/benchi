@@ -153,6 +153,9 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     conf => "Generating cumulative plot for {} tools...", files.len()
   }
 
+  log!{
+    conf, verb => "  loading {} data files...", files.len()
+  }
   let mut tool_data = Vec::with_capacity( files.len() ) ;
   let mut empty_data = vec![] ;
   let mut bench_count = 0 ;
@@ -186,21 +189,21 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     )
   }
 
-  println!("data:") ;
-  for data in & tool_data {
-    println!("  {} ({}):", data.tool.name, data.tool.short) ;
-    print!(  "    ") ;
-    for time in & data.res {
-      print!(" {}", time)
-    }
-    println!("") ;
-    print!(  "    ") ;
-    for time in data.acc_iter() {
-      print!(" {}", time)
-    }
-    println!(" (cumulative)") ;
-    println!("")
-  }
+  // println!("data:") ;
+  // for data in & tool_data {
+  //   println!("  {} ({}):", data.tool.name, data.tool.short) ;
+  //   print!(  "    ") ;
+  //   for time in & data.res {
+  //     print!(" {}", time)
+  //   }
+  //   println!("") ;
+  //   print!(  "    ") ;
+  //   for time in data.acc_iter() {
+  //     print!(" {}", time)
+  //   }
+  //   println!(" (cumulative)") ;
+  //   println!("")
+  // }
 
   let mut max_total_time = 0 ;
   // Cannot fail if the checks above are not changed.
@@ -211,13 +214,16 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     min_time = ::std::cmp::min(min_time, min)
   }
 
-  log!(conf => "y in [{}, {}]", min_time, max_total_time) ;
+  log!{ conf, verb => "  writing plot file `{}`...", conf.emph(& conf.file) }
 
   let mut file = conf.open_file_writer(& conf.file).chain_err(
     || format!(
       "while opening plot file `{}`", conf.emph(& conf.file)
     )
   ) ? ;
+
+  let pdf_file = format!("{}.pdf", conf.file) ;
+  log!{ conf, verb => "  (output pdf file is `{}`)", conf.emph(& pdf_file) }
 
   file.write_all(
     format!(
@@ -228,13 +234,16 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
   ).and_then(
     |()| file.write_all(
       format!(
-        "set output \"{}.pdf\"\n\
+        "set output \"{}\"\n\
         set xrange [1:{}]\n\
-        set yrange [0.001:*]\n\nplot \\\n",
-        conf.file,
+        set yrange [{}:{}]\n\nplot \\\n",
+        pdf_file,
         bench_count,
-        // min_time - min_time / 10,
-        // max_total_time + max_total_time / 10,
+        {
+          let min = min_time as f64 ;
+          (min - min / 10.0) / 1_000_000.0
+        },
+        (max_total_time + max_total_time / 10) / 1_000_000,
       ).as_bytes()
     )
   ).chain_err(
@@ -270,18 +279,47 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       ) ?
     }
 
-    // Run gnuplot.
-    Command::new("gnuplot").arg(& conf.file).output().chain_err(
-      || format!(
-        "while running gnuplot command on `{}`", conf.emph(& conf.file)
-      )
-    ) ? ;
+    if conf.pdf {
+      log!{ conf, verb => "  running gnuplot..." }
+      // Run gnuplot.
+      let status = Command::new("gnuplot").arg(& conf.file).status().chain_err(
+        || format!(
+          "while running gnuplot command on `{}`", conf.emph(& conf.file)
+        )
+      ) ? ;
+
+      if ! status.success() {
+        bail!(
+          format!("gnuplot failed on plot file `{}`", conf.emph(& conf.file))
+        )
+      }
+
+      if let Some(ref cmd) = conf.then {
+        log!{ conf, verb => "  running user-provided command" }
+        let status = Command::new(cmd).arg(& pdf_file).status().chain_err(
+          || format!(
+            "while running `{} {}` (user-provided command)",
+            conf.emph(cmd), conf.emph(& pdf_file)
+          )
+        ) ? ;
+        if ! status.success() {
+          bail!(
+            format!(
+              "failure on user-provided command `{} {}`",
+              conf.emph(cmd), conf.emph(& pdf_file)
+            )
+          )
+        }
+      }
+    }
 
     ()
   } else {
     // Should be unreachable.
     ()
   }
+
+  log!{ conf, verb => "done" }
 
   Ok(())
 }
@@ -304,10 +342,11 @@ set style line 5 lt 5 dt 5 lw 3 pt 3 linecolor rgb "0xFF8000"
 
 
 set xlabel "Number of benchmarks solved" textcolor rgbcolor "0x000000"
-set ylabel "Time in seconds" textcolor rgbcolor "0x000000" offset 3
+set ylabel "Time in seconds" textcolor rgbcolor "0x000000"
 set key bottom right
 set xtics 1
 set logscale y
+set format y "10e%T"
 "# ;
 
 

@@ -247,6 +247,10 @@ impl GConf {
 pub struct PlotConf {
   /// Output file.
   pub file: String,
+  /// Generate pdf?
+  pub pdf: bool,
+  /// Command to run.
+  pub then: Option<String>,
   /// Global conf.
   gconf: GConf,
 }
@@ -256,8 +260,10 @@ impl GConfExt for PlotConf {
 impl PlotConf {
   /// Creates a plot conf.
   #[inline]
-  pub fn mk(file: String, gconf: GConf) -> Self {
-    PlotConf { file, gconf }
+  pub fn mk(
+    file: String, pdf: bool, then: Option<String>, gconf: GConf
+  ) -> Self {
+    PlotConf { file, pdf, then, gconf }
   }
 }
 

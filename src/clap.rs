@@ -78,6 +78,8 @@ fn tmo_validator(s: String) -> Result<(), String> {
   }
 }
 
+/// Bool format.
+static bool_format: & str = "on|true|off|false" ;
 
 /// Boolean of a string.
 fn bool_of_str(s: & str) -> Option<bool> {
@@ -219,7 +221,7 @@ pub fn work() -> Res< Clap > {
     2, Some(
       Arg::with_name("CONF").help(
         "The configuration file (see `benchi conf -h` for details)"
-      ).required(true).index(1)
+      ).required(true).index(1).value_name("conf file")
     )
   ).plot_opts().get_matches() ;
 
@@ -241,9 +243,21 @@ pub fn work() -> Res< Clap > {
   }
 
   if let Some(plot_matches) = matches.subcommand_matches("plot") {
-    let file = plot_matches.value_of("FILE").expect(
+    let file = plot_matches.value_of("PLOT_FILE").expect(
       "unreachable(plot:cumul:FILE): required"
     ).to_string() ;
+
+    let pdf = bool_of_str(
+      plot_matches.value_of("pdf").expect(
+        "unreachable(plot:pdf): default provided"
+      )
+    ).expect(
+      "unreachable(plot:pdf): input validated in clap"
+    ) ;
+
+    let cmd = if pdf {
+      plot_matches.value_of("then").map(|s| s.to_string())
+    } else { None } ;
     
     if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
       let mut data_files = vec![] ;
@@ -253,7 +267,12 @@ pub fn work() -> Res< Clap > {
         data_files.push( data_file.to_string() )
       }
 
-      return Ok( Clap::CumulPlot(PlotConf::mk(file, conf), data_files) )
+      return Ok(
+        Clap::CumulPlot(
+          PlotConf::mk(file, pdf, cmd, conf),
+          data_files
+        )
+      )
     }
   }
 
@@ -296,21 +315,23 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
     ).about(
       "`benchi` is a customizable benchmarking tool."
     ).arg(
-      Arg::with_name("force").short("-f").help(
+      Arg::with_name("force").short("-f").long("--force").help(
         "When writing a file, overwrite if present"
       )
     ).arg(
-      Arg::with_name("quiet").short("-q").help(
+      Arg::with_name("quiet").short("-q").long("--quiet").help(
         "No output, except errors"
       ).conflicts_with("verbose")
     ).arg(
-      Arg::with_name("verbose").short("-v").help(
+      Arg::with_name("verbose").short("-v").long("--verb").help(
         "Verbose output"
       ).conflicts_with("quiet")
     ).arg(
       Arg::with_name("colored").short("-c").long("--color").help(
         "Colored output"
-      ).default_value("on").takes_value(true).validator(bool_validator)
+      ).default_value("on").takes_value(true).validator(
+        bool_validator
+      ).value_name(bool_format)
     )
   }
 
@@ -351,7 +372,7 @@ Sets the output directory. If the path ends with `today` (`now`), then `today`
 (`now`) will be replaced with `<y>_<m>_<d>` (`<y>_<m>_<d>_at_<h><min>`)
 representing the current date (and time).\
         "
-      ).value_name("dir").default_value("./").takes_value(true)
+      ).value_name("dir").default_value("today").takes_value(true)
     ).arg(
       Arg::with_name("timeout").short("-t").long("--timeout").help(
         "Sets the timeout for each run"
@@ -382,7 +403,7 @@ representing the current date (and time).\
 The file containing the inputs to give to the tools. Optional, can be
 specified in the configuration file.\
         "
-      ).index(bench_index)
+      ).value_name("bench file").index(bench_index)
     ) ;
 
     let app = if let Some(arg) = add_arg {
@@ -401,20 +422,34 @@ specified in the configuration file.\
     let app = SubCommand::with_name("plot").about(
       "Generates a plot."
     ).arg(
-      Arg::with_name("FILE").help(
+      Arg::with_name("then").long("--then").help(
         "\
-output plot file\
+Specifies a command to run on the pdf generated (ignored if `--pdf off`)\
         "
-      ).required(true).index(1)
+      ).value_name("command").takes_value(true)
+    ).arg(
+      Arg::with_name("pdf").long("--pdf").help(
+        "\
+Runs `gnuplot` to actually generate the pdf `<plot file>.pdf`\
+        "
+      ).default_value("on").takes_value(true).validator(
+        bool_validator
+      ).value_name(bool_format)
+    ).arg(
+      Arg::with_name("PLOT_FILE").help(
+        "\
+Output plot file\
+        "
+      ).value_name("plot file").required(true).index(1)
     ).subcommand(
       SubCommand::with_name("cumul").about(
         "Generates a cumulative plot"
       ).arg(
         Arg::with_name("DATA").help(
           "\
-data files to use for plot generation\
+Data files to use for plot generation\
           "
-        ).multiple(true).required(true)
+        ).value_name("data file").multiple(true).required(true)
       )
     ) ;
 
