@@ -274,6 +274,22 @@ pub fn work() -> Res< Clap > {
         )
       )
     }
+    
+    if let Some(compare_matches) = plot_matches.subcommand_matches("compare") {
+      let file_1 = compare_matches.value_of("FILE_1").expect(
+        "unreachable(plot:compare:FILE_1): required"
+      ) ;
+      let file_2 = compare_matches.value_of("FILE_2").expect(
+        "unreachable(plot:compare:FILE_2): required"
+      ) ;
+
+      return Ok(
+        Clap::ComparePlot(
+          PlotConf::mk(file, pdf, cmd, conf),
+          file_1.into(), file_2.into()
+        )
+      )
+    }
   }
 
   let msg = format!(
@@ -414,9 +430,7 @@ specified in the configuration file.\
     self.subcommand(app)
   }
 
-  fn plot_opts(
-    self
-  ) -> Self {
+  fn plot_opts(self) -> Self {
     use clap_lib::* ;
 
     let app = SubCommand::with_name("plot").about(
@@ -450,6 +464,22 @@ Output plot file\
 Data files to use for plot generation\
           "
         ).value_name("data file").multiple(true).required(true)
+      )
+    ).subcommand(
+      SubCommand::with_name("compare").about(
+        "Generates a comparison scatterplot between two tools"
+      ).arg(
+        Arg::with_name("FILE_1").help(
+          "\
+First data file (x axis)\
+          "
+        ).value_name("data file").required(true)
+      ).arg(
+        Arg::with_name("FILE_2").help(
+          "\
+Second data file (y axis)\
+          "
+        ).value_name("data file").required(true)
       )
     ) ;
 

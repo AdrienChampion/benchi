@@ -10,6 +10,7 @@ pub use std::time::{ Instant, Duration } ;
 pub use std::path::{ Path, PathBuf } ;
 pub use std::iter::Iterator ;
 pub use std::sync::Arc ;
+pub use std::collections::HashMap ;
 
 pub use pbr::{ ProgressBar, MultiBar } ;
 
@@ -83,13 +84,22 @@ pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
   )
 }
 
+/// Checks that a file exists.
+#[inline]
+pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
+  let path = path.as_ref() ;
+  path.exists() && path.is_file()
+}
+
 
 /// Clap result.
 pub enum Clap {
   /// Run mode.
   Run(RunConf, Vec<ToolConf>),
-  /// Cumulative plot.
+  /// Cumulative plot: configuration and files.
   CumulPlot(PlotConf, Vec<String>),
+  /// Comparison scatterplot: configuration and two files.
+  ComparePlot(PlotConf, String, String),
 }
 
 
@@ -196,7 +206,7 @@ impl VerbExt for Verb {
 
 
 /// Has a global conf.
-pub trait GConfExt {
+pub trait GConfExt: ColorExt {
   /// The global conf.
   #[inline]
   fn gconf(& self) -> & GConf ;
@@ -211,7 +221,18 @@ pub trait GConfExt {
     } else {
       options.create_new(true) ;
     }
-    options.open( path.as_ref() ).map_err( |e| e.into() )
+    options.open( path.as_ref() ).map_err(
+      |e| match e.kind() {
+        ::std::io::ErrorKind::AlreadyExists => {
+          ErrorKind::Msg(
+            format!(
+              "file exists, not overwriting without {} option", self.emph("-f")
+            )
+          ).into()
+        },
+        _ => e.into(),
+      }
+    )
   }
 }
 impl<T: GConfExt> ColorExt for T {
@@ -491,14 +512,27 @@ impl Iterator for ToolRange {
 
 
 /// The index of a bench, just a usize.
-#[derive(Clone, Copy, Debug)]
+#[derive(
+  Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash
+)]
 pub struct BenchIndex {
   /// The index.
   n: usize,
 }
+impl BenchIndex {
+  /// Iterator over indices. **Exclusive** upper bound.
+  pub fn iter(max: usize) -> BenchRange {
+    BenchRange { current: 0, max }
+  }
+}
 impl Deref for BenchIndex {
   type Target = usize ;
   fn deref(& self) -> & usize { & self.n }
+}
+impl From<usize> for BenchIndex {
+  fn from(n: usize) -> BenchIndex {
+    BenchIndex { n }
+  }
 }
 
 /// A range of bench indices.

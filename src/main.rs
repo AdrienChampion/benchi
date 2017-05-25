@@ -1,4 +1,9 @@
-//! `benchi` runs benchmarks.
+/*! `benchi` runs benchmarks.
+
+# TODO
+
+- have timeout in header of data files (will break `plot`)
+*/
 
 #![feature(process_try_wait)]
 #![forbid(missing_docs)]
@@ -229,21 +234,25 @@ fn main() {
 
       if let Err(e) = work( conf.clone(), instance.clone() ) {
         print_err(& * conf, e, true)
-      } else {
-        ::std::process::exit(0)
       }
     },
 
     Ok( Clap::CumulPlot(conf, files) ) => {
       if let Err(e) = plot::cumul::work(& conf, files) {
         print_err(& conf, e, true)
-      } else {
-        ::std::process::exit(0)
+      }
+    },
+
+    Ok( Clap::ComparePlot(conf, file_1, file_2) ) => {
+      if let Err(e) = plot::compare::work(& conf, file_1, file_2) {
+        print_err(& conf, e, true)
       }
     },
 
     Err(e) => print_err(& GConf::default(), e, true)
   }
+
+  ::std::process::exit(0)
 }
 
 
