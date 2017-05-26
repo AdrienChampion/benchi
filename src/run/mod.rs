@@ -301,8 +301,11 @@ pub struct Master {
   /// Files in write mode to write the results to.
   tool_files: ToolVec<File>,
   /// Progress bar.
-  bar: Option< ProgressBar< ::std::io::Stdout >,
-  >,
+  bar: Option< ProgressBar< ::std::io::Stdout > >,
+  /// Number of errors.
+  pub errors: usize,
+  /// Number of timeouts.
+  pub timeouts: usize,
 }
 impl Master {
   /// Creates (but does not run) a master.
@@ -377,12 +380,14 @@ impl Master {
         from_bench_runs,
         tool_files,
         bar,
+        errors: 0,
+        timeouts: 0,
       }
     )
   }
 
   /// Launches the listen/dispatch loop.
-  pub fn run(mut self) -> Res<Duration> {
+  pub fn run(& mut self) -> Res<Duration> {
     log!{ self.conf => "" }
     self.internal_run()
   }
@@ -481,42 +486,37 @@ impl Master {
             self.try_delete_err_dir(tool)
           }
 
-          match res.chain_err(
+          let (time, status) = res.chain_err(
             || format!(
               "while running {} on {}",
               self.instance[tool].name,
               self.conf.emph( self.instance.str_of_bench(bench) )
             )
-          ) {
-            Ok( (time, status) ) => {
-              let res = if time > self.conf.timeout {
-                format!( "timeout({})", self.conf.timeout.as_sec_str() )
-              } else if ! status.map(|s| s.success()).unwrap_or(true) {
-                "error".to_string()
-              } else {
-                time.as_sec_str()
-              } ;
-              try!(
-                writeln!(
-                  & mut self.tool_files[tool],
-                  "{} \"{}\" {}",
-                  self.instance.safe_name_for_bench(bench),
-                  self.instance.str_of_bench(bench),
-                  res
-                ).chain_err(
-                  || format!(
-                    "while writing result of {} running on {}",
-                    self.conf.emph( & self.instance[tool].name ),
-                    self.conf.emph( self.instance.str_of_bench(bench) )
-                  )
-                )
-              ) ;
-            },
-            Err(e) => {
-              print_err(& * self.conf, e, false) ;
-              println!("")
-            },
-          }
+          ) ? ;
+          let res = if time > self.conf.timeout {
+            self.timeouts += 1 ;
+            format!( "timeout({})", self.conf.timeout.as_sec_str() )
+          } else if ! status.map(|s| s.success()).unwrap_or(true) {
+            self.errors += 1 ;
+            "error".to_string()
+          } else {
+            time.as_sec_str()
+          } ;
+          try!(
+            writeln!(
+              & mut self.tool_files[tool],
+              "{} \"{}\" {}",
+              self.instance.safe_name_for_bench(bench),
+              self.instance.str_of_bench(bench),
+              res
+            ).chain_err(
+              || format!(
+                "while writing result of {} running on {}",
+                self.conf.emph( & self.instance[tool].name ),
+                self.conf.emph( self.instance.str_of_bench(bench) )
+              )
+            )
+          )
         },
 
         Err( TryRecvError::Empty ) => {

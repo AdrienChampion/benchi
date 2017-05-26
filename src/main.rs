@@ -334,6 +334,23 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
     return Ok(())
   }
 
+  // Check that the timeout command exists.
+  match Command::new("timeout").arg("1").arg("echo").arg("test").stdout(
+    ::std::process::Stdio::null()
+  ).stderr(
+    ::std::process::Stdio::null()
+  ).stdin(
+    ::std::process::Stdio::null()
+  ).status() {
+    Err(_) => bail!(
+      format!(
+        "could not find `{}` command, make sure it is installed",
+        conf.emph("timeout")
+      )
+    ),
+    _ => (),
+  }
+
   // Create output directory if it doesn't already exist.
   try!(
     mk_dir(& conf.out_dir).chain_err(
@@ -343,7 +360,7 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
     )
   ) ;
 
-  let master = try!(
+  let mut master = try!(
     run::Master::mk(conf.clone(), instance.clone())
   ) ;
 
@@ -362,7 +379,29 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
         "{}.{}", time.as_secs(), time.subsec_nanos() / 1_000_000u32
       ) ;
       " " ;
-      "Done in {}s", conf.emph(& time)
+      let pref = if master.errors > 0 || master.timeouts > 0 {
+        " with "
+      } else {
+        ""
+      } ;
+      let timeouts = if master.timeouts > 0 {
+        format!("{} timeouts", master.timeouts)
+      } else {
+        "".into()
+      } ;
+      let sep = if master.errors > 0 && master.timeouts > 0 {
+        " and "
+      } else {
+        ""
+      } ;
+      let errors = if master.errors > 0 {
+        format!("{} errors", master.errors)
+      } else {
+        "".into()
+      } ;
+      "Done in {}s{}{}{}{}",
+      conf.emph(& time),
+      pref, conf.sad(& timeouts), sep, conf.bad(& errors)
   ) ;
 
   Ok(())
