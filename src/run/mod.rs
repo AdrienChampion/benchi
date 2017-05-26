@@ -93,13 +93,16 @@ impl ToolRun {
 
     assert!( kid_cmd.len() > 0 ) ;
 
+    let mut cmd = Command::new("timeout") ;
+    cmd.arg(& format!("{}", self.conf.timeout.as_secs())).arg(& kid_cmd[0]) ;
     let mut cmd_str = kid_cmd[0].to_string() ;
-    let mut cmd = Command::new(& kid_cmd[0]) ;
     for arg in & kid_cmd[1..] {
       cmd.arg(arg) ;
+      cmd_str.push(' ') ;
       cmd_str.push_str(arg)
     }
     cmd.arg(bench) ;
+    cmd_str.push(' ') ;
     cmd_str.push_str(bench) ;
     let (stdout_file, stderr_file) = (
       self.open_stdout_file_for(tool_idx, bench_idx)?,
@@ -116,36 +119,19 @@ impl ToolRun {
       Instant::now()
     ) ;
 
-    'waiting: loop {
-      match try!(
-        kid.try_wait().chain_err(
-          || format!("while waiting for `{}`", cmd_str)
-        )
-      ) {
-        // Not done yet, timeout reached?
-        None => {
-          let time = Instant::now() - start ;
-          if time > self.conf.timeout {
-            try!(
-              kid.kill().chain_err(
-                || format!("while killing `{}`", cmd_str)
-              )
-            ) ;
-            return Ok( (time, None) )
-          } else {
-            // Wait a bit to avoid burning CPU.
-            sleep( Duration::from_millis(20) ) ;
-            continue 'waiting
-          }
-        },
-        // Done.
-        Some(status) => {
-          let time = Instant::now() - start ;
-          return Ok(
-            ( time, Some(status) )
-          )
-        },
-      }
+    let status = try!(
+      kid.wait().chain_err(
+        || format!("while waiting for `{}`", cmd_str)
+      )
+    ) ;
+    let time = Instant::now() - start ;
+
+    if let Some(124) = status.code() {
+      return Ok( (time, None) )
+    } else {
+      return Ok(
+        ( time, Some(status) )
+      )
     }
   }
 
