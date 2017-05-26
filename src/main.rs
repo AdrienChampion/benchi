@@ -5,7 +5,6 @@
 - have timeout in header of data files (will break `plot`)
 */
 
-#![feature(process_try_wait)]
 #![forbid(missing_docs)]
 #![allow(non_upper_case_globals)]
 
