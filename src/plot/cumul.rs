@@ -45,7 +45,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     return Ok(())
   }
 
-  if tool_data.len() > 5 {
+  if tool_data.len() > 8 {
     bail!(
       format!("not enough colors to create plot, I need to add more colors")
     )
@@ -186,11 +186,14 @@ set term pdf enhanced \
     font "Helvetica,15" \
     background rgb "0xFFFFFF"
 
-set style line 1 lt 1 dt 1 lw 3 pt 3 linecolor rgb "0x000000"
-set style line 2 lt 2 dt 2 lw 3 pt 3 linecolor rgb "0xCC0000"
-set style line 3 lt 3 dt 4 lw 3 pt 3 linecolor rgb "0x008800"
-set style line 4 lt 4 dt 3 lw 3 pt 3 linecolor rgb "0x0000CC"
-set style line 5 lt 5 dt 5 lw 3 pt 3 linecolor rgb "0xFF8000"
+set style line 1 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC0000"
+set style line 2 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x66CC00"
+set style line 3 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x00CCCC"
+set style line 4 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC6600"
+set style line 5 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x0000CC"
+set style line 6 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC00CC"
+set style line 7 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCCCC00"
+set style line 8 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x606060"
 
 
 set xlabel "Benchmark passed" textcolor rgbcolor "0x000000"

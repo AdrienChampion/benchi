@@ -401,7 +401,22 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
       } ;
       "Done in {}s{}{}{}{}",
       conf.emph(& time),
-      pref, conf.sad(& timeouts), sep, conf.bad(& errors)
+      pref, conf.sad(& timeouts), sep, conf.bad(& errors) ;
+      "" ;
+      "Average runtime:" ;
+      {
+        for tool in instance.tools() {
+          let (avg, cnt) = master.avg_runtime[tool] ;
+          log!{
+            conf =>
+              "  {}: {}",
+              conf.emph(& instance[tool].name),
+              if cnt > 0 { avg.as_sec_str() } else {
+                "no benchmark passed".into()
+              }
+          }
+        }
+      }
   ) ;
 
   Ok(())

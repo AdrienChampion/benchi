@@ -213,6 +213,13 @@ pub trait GConfExt: ColorExt {
   /// Opens a file in write mode.
   #[inline]
   fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
+    // Create parent directory if necessary.
+    {
+      let mut buf = path.as_ref().to_path_buf() ;
+      if buf.pop() {
+        mk_dir(& buf) ?
+      }
+    }
     let conf = self.gconf() ;
     let mut options = ::std::fs::OpenOptions::new() ;
     options.write(true) ;

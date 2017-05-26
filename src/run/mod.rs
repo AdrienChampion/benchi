@@ -306,6 +306,10 @@ pub struct Master {
   pub errors: usize,
   /// Number of timeouts.
   pub timeouts: usize,
+  /// Average runtime (does not include timeouts and errors).
+  ///
+  /// Second element is the number of benchmarks solved.
+  pub avg_runtime: ToolVec<(Duration, u32)>
 }
 impl Master {
   /// Creates (but does not run) a master.
@@ -345,8 +349,10 @@ impl Master {
     } ;
 
     let mut tool_files = ToolVec::with_capacity( instance.tool_len() ) ;
+    let mut avg_runtime = ToolVec::with_capacity( instance.tool_len() ) ;
     // Open output files.
     for tool in instance.tools() {
+      avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
       instance.mk_err_dir(& conf, tool)? ;
       instance.mk_out_dir(& conf, tool)? ;
       let mut path = PathBuf::new() ;
@@ -382,6 +388,7 @@ impl Master {
         bar,
         errors: 0,
         timeouts: 0,
+        avg_runtime,
       }
     )
   }
@@ -500,6 +507,10 @@ impl Master {
             self.errors += 1 ;
             "error".to_string()
           } else {
+            let (ref mut avg, ref mut cnt) = self.avg_runtime[tool] ;
+            // Incremental average computation.
+            * cnt += 1 ;
+            * avg = (*avg * (*cnt - 1) + time) / *cnt ;
             time.as_sec_str()
           } ;
           try!(
