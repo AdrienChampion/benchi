@@ -18,6 +18,15 @@ use ansi::{ Style, Colour } ;
 
 use errors::* ;
 
+/// Unimplemented.
+macro_rules! bail_unimpl {
+  ($conf:expr, $stuff:tt) => (
+    bail!(
+      format!("{} is not implemented yet", $conf.emph($stuff))
+    )
+  ) ;
+}
+
 /// Log macro.
 macro_rules! log {
 
@@ -91,15 +100,28 @@ pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
   path.exists() && path.is_file()
 }
 
+/// Plot kinds.
+pub enum PlotKind {
+  /// Cumulative plot.
+  Cumul {
+    /// Data files.
+    files: Vec<String>,
+  },
+  /// Comparison scatterplot.
+  Compare {
+    /// Data file 1.
+    file_1: String,
+    /// Data file 2.
+    file_2: String,
+  }
+}
 
 /// Clap result.
 pub enum Clap {
   /// Run mode.
   Run(RunConf, Vec<ToolConf>),
-  /// Cumulative plot: configuration and files.
-  CumulPlot(PlotConf, Vec<String>),
-  /// Comparison scatterplot: configuration and two files.
-  ComparePlot(PlotConf, String, String),
+  /// Plot mode.
+  Plot(PlotConf, PlotKind),
 }
 
 
@@ -210,14 +232,16 @@ pub trait GConfExt: ColorExt {
   /// The global conf.
   #[inline]
   fn gconf(& self) -> & GConf ;
-  /// Opens a file in write mode.
+  /// Opens a file in write mode. Creates parent directory if necessary.
   #[inline]
   fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
     // Create parent directory if necessary.
     {
       let mut buf = path.as_ref().to_path_buf() ;
       if buf.pop() {
-        mk_dir(& buf) ?
+        mk_dir(& buf).chain_err(
+          || "while creating parent directory"
+        ) ?
       }
     }
     let conf = self.gconf() ;
@@ -366,34 +390,37 @@ pub struct ToolConf {
   // /// Optional validator.
   // pub validator: ()
 }
-static name_dump_pref:  & str = "# " ;
-static short_dump_pref: & str = "# short: " ;
-static graph_dump_pref: & str = "# graph: " ;
-static cmd_dump_pref:   & str = "# cmd: " ;
 unsafe impl Sync for ToolConf {}
 impl ToolConf {
   /// Dumps info to a writer.
-  pub fn dump_info<W: Write>(& self, w: & mut W) -> ::std::io::Result<()> {
-    writeln!(w, "{}{}", name_dump_pref, self.name) ? ;
-    writeln!(w, "{}{}", short_dump_pref, self.short) ? ;
-    writeln!(w, "{}{}", graph_dump_pref, self.graph) ? ;
-    write!(  w, "{}", cmd_dump_pref) ? ;
+  pub fn dump_info<W: Write>(
+    & self, timeout: & Duration, w: & mut W
+  ) -> ::std::io::Result<()> {
+    use consts::dump::* ;
+
+    writeln!(w, "{} {}", & * cmt_pref, self.name) ? ;
+    writeln!(w, "{}{}", * short_name_key, self.short) ? ;
+    writeln!(w, "{}{}", * graph_name_key, self.graph) ? ;
+    write!(  w, "{}", * cmd_key) ? ;
     for s in & self.cmd {
       write!(w, "{} ", s) ?
     }
     writeln!(w, "") ? ;
-    writeln!(w, "#")
+    writeln!(w, "{}{}", * timeout_key, timeout.as_sec_str()) ? ;
+    writeln!(w, "{}", & * cmt_pref)
   }
   /// Loads a tool configuration from a dump.
   pub fn from_dump<Br: BufRead>(lines: & mut Lines<Br>) -> Res<Self> {
+    use consts::dump::* ;
+
     let name = if let Some(line) = lines.next() {
       let line = line ? ;
-      let len = name_dump_pref.len() ;
-      if line.len() < len + 1 || & line[0..len] != name_dump_pref {
+      let len = cmt_pref.len() ;
+      if line.len() < len + 1 || & line[0..len] != & * cmt_pref {
         bail!(
           format!(
-            "illegal dump file, first line should be `{}<tool name>`",
-            name_dump_pref
+            "illegal dump file, first line should be `{} <tool name>`",
+            & * cmt_pref
           )
         )
       } else {
@@ -404,12 +431,12 @@ impl ToolConf {
     } ;
     let short = if let Some(line) = lines.next() {
       let line = line ? ;
-      let len = short_dump_pref.len() ;
-      if line.len() < len + 1 || & line[0..len] != short_dump_pref {
+      let len = short_name_key.len() ;
+      if line.len() < len + 1 || & line[0..len] != * short_name_key {
         bail!(
           format!(
             "illegal dump file, second line should be \
-            `{}<tool short name>`", short_dump_pref
+            `{}<tool short name>`", * short_name_key
           )
         )
       } else {
@@ -420,12 +447,12 @@ impl ToolConf {
     } ;
     let graph = if let Some(line) = lines.next() {
       let line = line ? ;
-      let len = graph_dump_pref.len() ;
-      if line.len() < len + 1 || & line[0..len] != graph_dump_pref {
+      let len = graph_name_key.len() ;
+      if line.len() < len + 1 || & line[0..len] != * graph_name_key {
         bail!(
           format!(
             "illegal dump file, second line should be \
-            `{}<tool graph name>`", graph_dump_pref
+            `{}<tool graph name>`", * graph_name_key
           )
         )
       } else {
@@ -436,12 +463,12 @@ impl ToolConf {
     } ;
     let cmd = if let Some(line) = lines.next() {
       let line = line ? ;
-      let len = cmd_dump_pref.len() ;
-      if line.len() < len + 1 || & line[0..len] != cmd_dump_pref {
+      let len = cmd_key.len() ;
+      if line.len() < len + 1 || & line[0..len] != * cmd_key {
         bail!(
           format!(
             "illegal dump file, second line should be \
-            `{}<tool cmd>`", cmd_dump_pref
+            `{}<tool cmd>`", * cmd_key
           )
         )
       } else {

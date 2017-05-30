@@ -21,12 +21,15 @@ extern crate error_chain ;
 #[macro_use]
 extern crate lazy_static ;
 
+pub mod consts ;
 #[macro_use]
 pub mod common ;
 pub mod clap ;
 pub mod parse ;
 pub mod run ;
+pub mod loading ;
 pub mod plot ;
+pub mod inspect ;
 
 
 use common::* ;
@@ -49,13 +52,6 @@ pub mod errors {
     }
 
     errors {
-      #[doc = "Unimplemented."]
-      Unimpl(conf: GConf, blah: String) {
-        description("unimplemented feature")
-        display(
-          "feature {} is {} yet", blah, conf.sad("not implemented")
-        )
-      }
       #[doc = "Clap: argument name, error description."]
       Clap(arg: String, blah: String) {
         description("clap error")
@@ -236,14 +232,8 @@ fn main() {
       }
     },
 
-    Ok( Clap::CumulPlot(conf, files) ) => {
-      if let Err(e) = plot::cumul::work(& conf, files) {
-        print_err(& conf, e, true)
-      }
-    },
-
-    Ok( Clap::ComparePlot(conf, file_1, file_2) ) => {
-      if let Err(e) = plot::compare::work(& conf, file_1, file_2) {
+    Ok( Clap::Plot(conf, kind) ) => {
+      if let Err(e) = plot::work(& conf, kind) {
         print_err(& conf, e, true)
       }
     },

@@ -2,7 +2,7 @@
 
 use common::* ;
 use errors::* ;
-use plot::{ Data, ToolData } ;
+use loading::{ Data, ToolData } ;
 
 /// Generates the comparison scatterplot between two tools.
 pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
@@ -176,7 +176,22 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   let min_time = min_time - min_time / 10 ;
 
 
-  let pdf_file = format!("{}.pdf", conf.file) ;
+  let pdf_file = {
+    let mut path = PathBuf::from(& conf.file) ;
+    let worked = path.set_extension("pdf") ;
+    if ! worked {
+      bail!(
+        format!("illegal plot file `{}`", conf.file)
+      )
+    }
+    if let Some(s) = path.to_str() {
+      s.to_string()
+    } else {
+      bail!(
+        format!("illegal plot file `{}`", conf.file)
+      )
+    }
+  } ;
 
   log!{
     conf, verb =>
@@ -229,8 +244,8 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
         "
 set output \"{}\"
 
-set xlabel \"{} (seconds)\" textcolor rgbcolor \"0x000000\"
-set ylabel \"{} (seconds)\" textcolor rgbcolor \"0x000000\"
+set xlabel \"{} (seconds, logscale)\" textcolor rgbcolor \"0x000000\"
+set ylabel \"{} (seconds, logscale)\" textcolor rgbcolor \"0x000000\"
 
 set xrange [{}:{}]
 set yrange [{}:{}]
@@ -305,7 +320,10 @@ plot \\
 
 static plot_prefix: & str = r#"
 
-set border linecolor rgbcolor "0x000000"
+set border 3 linecolor rgbcolor "0x000000"
+set xtics nomirror
+set ytics nomirror
+set grid
 set key textcolor rgbcolor "0x000000"
 set term pdf enhanced \
     font "Helvetica,15" \

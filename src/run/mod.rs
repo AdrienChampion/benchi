@@ -350,6 +350,7 @@ impl Master {
 
     let mut tool_files = ToolVec::with_capacity( instance.tool_len() ) ;
     let mut avg_runtime = ToolVec::with_capacity( instance.tool_len() ) ;
+    
     // Open output files.
     for tool in instance.tools() {
       avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
@@ -369,7 +370,7 @@ impl Master {
           conf.emph( & instance[tool].name )
         )
       ) ? ;
-      instance[tool].dump_info(& mut tool_file).chain_err(
+      instance[tool].dump_info(& conf.timeout, & mut tool_file).chain_err(
         || format!(
           "while dumping info for tool `{}`",
           conf.emph( & instance[tool].name )

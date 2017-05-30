@@ -4,7 +4,7 @@ use std::iter::Iterator ;
 
 use common::* ;
 use errors::* ;
-use plot::ToolData ;
+use loading::ToolData ;
 
 
 /// Generates the cumulative plot between several tools.
@@ -45,19 +45,19 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     return Ok(())
   }
 
-  if tool_data.len() > 8 {
-    bail!(
-      format!("not enough colors to create plot, I need to add more colors")
+  if tool_data.len() > 16 {
+    warn!(
+      conf => "only 16 colors defined, plot might fail"
     )
   }
 
-  let mut max_total_time = 0 ;
+  let mut _max_total_time = 0 ;
   // Cannot fail if the checks above are not changed.
-  let mut min_time = tool_data[0].res[0] ;
+  let mut _min_time = tool_data[0].res[0] ;
   for data in & tool_data {
     let (total_time, min) = data.cumul_write(conf) ? ;
-    max_total_time = ::std::cmp::max(max_total_time, total_time) ;
-    min_time = ::std::cmp::min(min_time, min)
+    _max_total_time = ::std::cmp::max(_max_total_time, total_time) ;
+    _min_time = ::std::cmp::min(_min_time, min)
   }
 
   log!{ conf, verb => "  writing plot file `{}`...", conf.emph(& conf.file) }
@@ -68,7 +68,22 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     )
   ) ? ;
 
-  let pdf_file = format!("{}.pdf", conf.file) ;
+  let pdf_file = {
+    let mut path = PathBuf::from(& conf.file) ;
+    let worked = path.set_extension("pdf") ;
+    if ! worked {
+      bail!(
+        format!("illegal plot file `{}`", conf.file)
+      )
+    }
+    if let Some(s) = path.to_str() {
+      s.to_string()
+    } else {
+      bail!(
+        format!("illegal plot file `{}`", conf.file)
+      )
+    }
+  } ;
   log!{ conf, verb => "  (output pdf file is `{}`)", conf.emph(& pdf_file) }
 
   file.write_all(
@@ -86,16 +101,8 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
   ).and_then(
     |()| file.write_all(
       format!(
-        "set output \"{}\"\n\
-        set xrange [1:{}]\n\
-        set yrange [{}:{}]\n\nplot \\\n",
+        "set output \"{}\"\n\nplot \\\n",
         pdf_file,
-        bench_count,
-        {
-          let min = min_time as f64 ;
-          (min - min / 10.0) / 1_000_000.0
-        },
-        (max_total_time + max_total_time / 10) / 1_000_000,
       ).as_bytes()
     )
   ).chain_err(
@@ -104,13 +111,13 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     )
   ) ? ;
 
-  let mut data_iter = tool_data.iter() ;
+  let mut data_iter = (1..).zip( tool_data.iter() ) ;
 
-  if let Some(data) = data_iter.next() {
+  if let Some( (index, data) ) = data_iter.next() {
     file.write_all(
       format!(
-        "  \"{}\" using 1:($2/1000000) smooth csplines t '{} ({})' w l",
-        data.file, data.tool.graph, data.res.len()
+        "  \"{}\" using ($2/1000000):1 w lp ls {} t '{} ({})'",
+        data.file, index, data.tool.graph, data.res.len()
       ).as_bytes()
     ).chain_err(
       || format!(
@@ -118,11 +125,11 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       )
     ) ? ;
     // "output/cumul.plot.find_3.data" using 1:2 smooth cumulative t 'find 3 (4)'
-    for data in data_iter {
+    for (index, data) in data_iter {
       file.write_all(
         format!(
-          ", \\\n  \"{}\" using 1:($2/1000000) smooth csplines t '{} ({})' w l",
-          data.file, data.tool.graph, data.res.len()
+          ", \\\n  \"{}\" using ($2/1000000):1 w lp ls {} t '{} ({})'",
+          data.file, index, data.tool.graph, data.res.len()
         ).as_bytes()
       ).chain_err(
         || format!(
@@ -180,26 +187,38 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
 
 static plot_prefix: & str = r#"
 
-set border linecolor rgbcolor "0x000000"
+set border 3 linecolor rgbcolor "0x000000"
 set key textcolor rgbcolor "0x000000"
 set term pdf enhanced \
     font "Helvetica,15" \
     background rgb "0xFFFFFF"
 
-set style line 1 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC0000"
-set style line 2 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x66CC00"
-set style line 3 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x00CCCC"
-set style line 4 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC6600"
-set style line 5 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x0000CC"
-set style line 6 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCC00CC"
-set style line 7 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0xCCCC00"
-set style line 8 lt 1 dt 1 lw 2 pt 1 linecolor rgb "0x606060"
+set style line 1  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC0000"
+set style line 2  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x66CC00"
+set style line 3  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x00CCCC"
+set style line 4  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC6600"
+set style line 5  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x0000CC"
+set style line 6  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC00CC"
+set style line 7  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x999900"
+set style line 8  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x606060"
+set style line 9  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC0000"
+set style line 10 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x66CC00"
+set style line 11 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x00CCCC"
+set style line 12 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC6600"
+set style line 13 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x0000CC"
+set style line 14 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC00CC"
+set style line 15 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x999900"
+set style line 16 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x606060"
 
+set xtics nomirror
+set ytics nomirror
+set grid
 
-set xlabel "Benchmark passed" textcolor rgbcolor "0x000000"
-set ylabel "Time in seconds" textcolor rgbcolor "0x000000"
+set xlabel "Benchmarks passed" textcolor rgbcolor "0x000000"
+set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
 
-set key above maxrows 1 samplen 2 font ",11"
+set key above samplen 2 font ",11"
 
-set logscale y
+set logscale x
+set autoscale
 "# ;

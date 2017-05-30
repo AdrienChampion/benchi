@@ -223,7 +223,7 @@ pub fn work() -> Res< Clap > {
         "The configuration file (see `benchi conf -h` for details)"
       ).required(true).index(1).value_name("conf file")
     )
-  ).plot_opts().get_matches() ;
+  ).plot_opts().inspect_opts().get_matches() ;
 
   let conf = {
     Matches { primary: & matches, secondary: None }.clap_main()
@@ -268,9 +268,9 @@ pub fn work() -> Res< Clap > {
       }
 
       return Ok(
-        Clap::CumulPlot(
+        Clap::Plot(
           PlotConf::mk(file, pdf, cmd, conf),
-          data_files
+          PlotKind::Cumul { files: data_files }
         )
       )
     }
@@ -284,21 +284,18 @@ pub fn work() -> Res< Clap > {
       ) ;
 
       return Ok(
-        Clap::ComparePlot(
+        Clap::Plot(
           PlotConf::mk(file, pdf, cmd, conf),
-          file_1.into(), file_2.into()
+          PlotKind::Compare {
+            file_1: file_1.into(),
+            file_2: file_2.into()
+          }
         )
       )
     }
   }
 
-  let msg = format!(
-    "anything else that the {} or {} subcommands",
-    conf.emph("run"), conf.emph("plot")
-  ) ;
-  bail!(
-    ::errors::ErrorKind::Unimpl( conf, msg )
-  )
+  bail!("expected command, found nothing")
 
 }
 
@@ -317,6 +314,8 @@ trait AppExt {
   ) -> Self ;
   /// Adds the `plot` options.
   fn plot_opts(self) -> Self ;
+  /// Adds the `inspect` options.
+  fn inspect_opts(self) -> Self ;
 }
 impl<'a, 'b> AppExt for App<'a, 'b> {
   type Argument = Arg<'a, 'b> ;
@@ -488,6 +487,17 @@ Second data file (y axis)\
     // } else {
     //   app
     // } ;
+    self.subcommand(app)
+  }
+
+  /// Adds inspection options.
+  fn inspect_opts(self) -> Self {
+    use clap_lib::* ;
+
+    let app = SubCommand::with_name("inspect").about(
+      "Interactive data inspection."
+    ) ;
+
     self.subcommand(app)
   }
 }
