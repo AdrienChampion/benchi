@@ -162,10 +162,13 @@ fn main() {
       log!{
         conf, verb =>
           "{}:", conf.emph("Configuration") ;
-          "  // benchs: {}", conf.bench_par ;
-          "  // tools : {}", conf.tool_par ;
-          "    timeout: {}", conf.timeout.as_sec_str() ;
-          "    out dir: {}", conf.out_dir ; {
+          "           timeout: {}s", conf.timeout.as_secs() ;
+          "           out dir: {}", conf.happy(& conf.out_dir) ;
+          "      benchs in //: {}", conf.bench_par ;
+          "       tools in //: {}", conf.tool_par ;
+          "  max threads used: {}",
+          conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
+          {
             if let Some(max) = conf.try {
               log!{ conf, verb => "        try: {}", max }
             }
@@ -184,6 +187,10 @@ fn main() {
           unreachable!()
         },
       } ;
+
+      log!{
+        conf, verb => "done"
+      }
 
       let (conf, instance) = (
         Arc::new(conf), Arc::new(instance)

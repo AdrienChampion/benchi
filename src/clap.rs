@@ -239,6 +239,7 @@ pub fn work() -> Res< Clap > {
     let matches = Matches {
       primary: & matches, secondary: Some(& file_matches)
     } ;
+    let conf = matches.clap_main() ;
     return Ok( Clap::Run(matches.clap_run(conf)?, tools) )
   }
 
