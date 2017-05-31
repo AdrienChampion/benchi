@@ -53,7 +53,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     )
   }
 
-  let mut _max_total_time = 0 ;
+  let mut _max_total_time = Duration::zero() ;
   // Cannot fail if the checks above are not changed.
   let mut _min_time = tool_data[0].res[0] ;
   for data in & tool_data {
@@ -118,7 +118,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
   if let Some( (index, data) ) = data_iter.next() {
     file.write_all(
       format!(
-        "  \"{}\" using ($2/1000000):1 w lp ls {} t '{} ({})'",
+        "  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
         data.file, index, data.tool.graph, data.res.len()
       ).as_bytes()
     ).chain_err(
@@ -130,7 +130,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     for (index, data) in data_iter {
       file.write_all(
         format!(
-          ", \\\n  \"{}\" using ($2/1000000):1 w lp ls {} t '{} ({})'",
+          ", \\\n  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
           data.file, index, data.tool.graph, data.res.len()
         ).as_bytes()
       ).chain_err(

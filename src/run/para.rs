@@ -60,6 +60,7 @@ pub fn bench_to_tool_channel() -> (
 pub type Output = Option<ExitStatus> ;
 
 /// Result of a run.
+#[derive(Debug)]
 pub struct RunRes<T> {
   /// Tool index.
   pub tool: ToolIndex,

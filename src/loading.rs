@@ -4,17 +4,21 @@ use common::* ;
 use errors::* ;
 use consts::data::* ;
 
-/// Seconds and microseconds from a regex match.
-fn micros_of_time_re<'a>(cap: ::regex::Captures<'a>) -> Res<u64> {
+/// Duration from a success regex match.
+fn duration_of_time_re<'a>(cap: ::regex::Captures<'a>) -> Res<Duration> {
   use std::str::FromStr ;
   let s = cap.get(1).and_then(
     |secs| {
-      let micros = cap.get(2) ;
-      micros.map(|micros| (secs, micros))
+      let nanos = cap.get(2) ;
+      nanos.map(|nanos| (secs, nanos))
     }
   ).map(
-    |(secs, micros)| u64::from_str(
-      & format!("{}{}", secs.as_str(), micros.as_str())
+    |(secs, nanos)| u64::from_str(
+      secs.as_str()
+    ).and_then(
+      |secs| u32::from_str( nanos.as_str() ).map(
+        |nanos| Duration::new(secs, nanos)
+      )
     )
   ) ;
   match s {
@@ -30,7 +34,7 @@ fn micros_of_time_re<'a>(cap: ::regex::Captures<'a>) -> Res<u64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Data {
   /// Success with a time in microseconds.
-  Success(u64),
+  Success(Duration),
   /// Timeout.
   Timeout(u64),
   /// Error.
@@ -42,7 +46,7 @@ impl Data {
   pub fn of_str(s: & str) -> Res< Option<Data> > {
     use std::str::FromStr ;
     if let Some(cap) = data_success_re.captures(s) {
-      return micros_of_time_re(cap).map(
+      return duration_of_time_re(cap).map(
         |val| Some( Data::Success(val) )
       )
     }
@@ -78,7 +82,10 @@ impl Data {
 
   /// Ternary map (?).
   pub fn map<
-    T, FSucc: FnOnce(u64) -> T, FTmo: FnOnce(u64) -> T, FErr: FnOnce() -> T,
+    T,
+    FSucc: FnOnce(Duration) -> T,
+    FTmo: FnOnce(u64) -> T,
+    FErr: FnOnce() -> T,
   >(& self, f_succ: FSucc, f_tmo: FTmo, f_err: FErr) -> T {
     match * self {
       Data::Success(time) => f_succ(time),
@@ -115,7 +122,7 @@ impl<T> ToolData<T> {
   /// Creates a tool data from a file.
   #[inline]
   fn polymorphic_of_file<
-    P: AsRef<Path>, F: Fn( Vec<(BenchIndex, Data)> ) -> T
+    P: AsRef<Path>, F: Fn( Vec<(BenchIndex, Data)>, Duration ) -> T
   >(
     conf: & PlotConf, path: P, treatment: F
   ) -> Res<Self> {
@@ -149,12 +156,7 @@ impl<T> ToolData<T> {
       )
     ).and_then(
       |line| if let Some(cap) = ::consts::dump::timeout_re.captures(& line) {
-        micros_of_time_re(cap).map(
-          |micros| {
-            let secs = micros / 1_000_000 ;
-            Duration::new(secs, (micros - secs * 1_000_000) as u32)
-          }
-        )
+        duration_of_time_re(cap)
       } else {
         Err(
           format!(
@@ -220,24 +222,24 @@ impl<T> ToolData<T> {
 
     Ok(
       ToolData {
-        tool, timeout, file: data_file, res: treatment(vec)
+        tool, timeout, file: data_file, res: treatment(vec, timeout)
       }
     )
   }
 }
 
-impl ToolData< (u64, u64, HashMap<BenchIndex, Data>) > {
+impl ToolData< (Duration, Duration, HashMap<BenchIndex, Data>) > {
   /// Creates a tool data for a comparative plot from a file.
   #[inline]
   pub fn compare_of_file<P: AsRef<Path>>(
     conf: & PlotConf, path: P
   ) -> Res<Self> {
     ToolData::polymorphic_of_file(
-      conf, path, |vec| {
+      conf, path, |vec, timeout| {
         let mut map = HashMap::with_capacity( vec.len() ) ;
-        let mut timeout = None ;
-        let mut max_time = 0 ;
+        let mut max_time = Duration::zero() ;
         let mut min_time = None ;
+        let mut tmo = None ;
         for (bench, data) in vec {
           match & data {
             & Data::Success(time) => {
@@ -248,13 +250,17 @@ impl ToolData< (u64, u64, HashMap<BenchIndex, Data>) > {
                 )
               )
             }
-            & Data::Timeout(to) => timeout = Some(to),
+            & Data::Timeout(_) => tmo = Some(timeout),
             _ => (),
           }
           let was_there = map.insert(bench, data) ;
           assert!( was_there.is_none() )
         }
-        ( min_time.unwrap_or(1), timeout.unwrap_or(max_time), map )
+        (
+          min_time.unwrap_or( Duration::new(0, 1_000) ),
+          tmo.unwrap_or(max_time),
+          map
+        )
       },
     )
   }
@@ -273,13 +279,13 @@ impl ToolData< (u64, u64, HashMap<BenchIndex, Data>) > {
 
   /// Max time found in the map.
   #[inline]
-  pub fn max_time(& self) -> u64 {
+  pub fn max_time(& self) -> Duration {
     self.res.1
   }
 
   /// Min time found in the map.
   #[inline]
-  pub fn min_time(& self) -> u64 {
+  pub fn min_time(& self) -> Duration {
     self.res.0
   }
 
@@ -290,14 +296,14 @@ impl ToolData< (u64, u64, HashMap<BenchIndex, Data>) > {
   }
 }
 
-impl ToolData< Vec<u64> > {
+impl ToolData< Vec<Duration> > {
   /// Creates a tool data for a cumulative plot from a file.
   #[inline]
   pub fn cumul_of_file<P: AsRef<Path>>(
     conf: & PlotConf, path: P
   ) -> Res<Self> {
     ToolData::polymorphic_of_file(
-      conf, path, |vec| {
+      conf, path, |vec, _| {
         let mut res = Vec::with_capacity( vec.len() ) ;
         for (_, data) in vec {
           if let Data::Success(time) = data {
@@ -314,7 +320,7 @@ impl ToolData< Vec<u64> > {
   /// Writes the cumulative data to `<conf.file>.<tool short name>.data`.
   ///
   /// Returns the total time and the time of the first element of res.
-  pub fn cumul_write(& self, conf: & PlotConf) -> Res<(u64, u64)> {
+  pub fn cumul_write(& self, conf: & PlotConf) -> Res<(Duration, Duration)> {
     let path = PathBuf::from(& self.file) ;
     let mut tool_file = conf.open_file_writer(
       path.as_path()
@@ -331,13 +337,15 @@ impl ToolData< Vec<u64> > {
         conf.emph( & self.file )
       )
     ) ? ;
-    let mut total_time = 0 ;
-    let min_time = if self.res.is_empty() { 0 } else { self.res[0] } ;
+    let mut total_time = Duration::zero() ;
+    let min_time = if self.res.is_empty() {
+      Duration::zero()
+    } else { self.res[0] } ;
     let mut cnt = 0 ;
     for time in self.acc_iter() {
       cnt += 1 ;
       total_time = time ;
-      writeln!(tool_file, "{} {}", cnt, time).chain_err(
+      writeln!(tool_file, "{} {}", cnt, time.as_sec_str()).chain_err(
         || format!(
           "while writing data file `{}` for tool `{}`",
           conf.sad(& self.file), conf.emph( & self.tool.name )
@@ -350,7 +358,7 @@ impl ToolData< Vec<u64> > {
   /// Iterator on the **accumulation** of the runtimes in millis.
   #[inline]
   pub fn acc_iter<'a>(& 'a self) -> AccIter<'a> {
-    AccIter { data: & self, curr: 0, acc: 0u64 }
+    AccIter { data: & self, curr: 0, acc: Duration::zero() }
   }
 }
 
@@ -358,15 +366,15 @@ impl ToolData< Vec<u64> > {
 /// Iterator on some tool data.
 pub struct AccIter<'a> {
   /// The data.
-  data: & 'a ToolData< Vec<u64> >,
+  data: & 'a ToolData< Vec<Duration> >,
   /// Current index.
   curr: usize,
   /// Accumulator.
-  acc: u64,
+  acc: Duration,
 }
 impl<'a> Iterator for AccIter<'a> {
-  type Item = u64 ;
-  fn next(& mut self) -> Option<u64> {
+  type Item = Duration ;
+  fn next(& mut self) -> Option<Duration> {
     if self.curr >= self.data.res.len() { None } else {
       self.acc += self.data.res[self.curr] ;
       self.curr += 1 ;

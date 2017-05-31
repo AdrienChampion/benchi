@@ -223,7 +223,7 @@ pub fn work() -> Res< Clap > {
         "The configuration file (see `benchi conf -h` for details)"
       ).required(true).index(1).value_name("conf file")
     )
-  ).plot_opts().inspect_opts().get_matches() ;
+  ).plot_opts().inspect_opts().conf_opts().get_matches() ;
 
   let conf = {
     Matches { primary: & matches, secondary: None }.clap_main()
@@ -295,6 +295,13 @@ pub fn work() -> Res< Clap > {
     }
   }
 
+  if let Some(conf_matches) = matches.subcommand_matches("conf") {
+    let conf_file = conf_matches.value_of("CONF").expect(
+      "unreachable(CONF): required"
+    ).to_string() ;
+    return Ok( Clap::Conf(conf, conf_file) )
+  }
+
   bail!("called with unimplemented command")
 
 }
@@ -316,6 +323,8 @@ trait AppExt {
   fn plot_opts(self) -> Self ;
   /// Adds the `inspect` options.
   fn inspect_opts(self) -> Self ;
+  /// Adds the `conf` options, the subcommand explaining configuration files.
+  fn conf_opts(self) -> Self ;
 }
 impl<'a, 'b> AppExt for App<'a, 'b> {
   type Argument = Arg<'a, 'b> ;
@@ -502,6 +511,86 @@ Second data file (y axis)\
     let app = SubCommand::with_name("inspect").about(
       "Interactive data inspection. (UNIMPLEMENTED)"
     ).about("UNIMPLEMENTED") ;
+
+    self.subcommand(app)
+  }
+
+  /// Adds configuration explanation options.
+  fn conf_opts(self) -> Self {
+    use clap_lib::* ;
+
+    let app = SubCommand::with_name("conf").about(
+      "Explanation of the configuration file format."
+    ).about("\
+To run benchmarks you must provide a configuration file that describes the
+tools to run. It can also include options normally passed as command-line
+arguments (CLA), so that you can simply run `benchi run my_conf_file` (more on
+that below).
+
+Single line comments use Rust/C/C++ syntax `//` and can appear anywhere. There
+is currently no multi-line comments.
+
+# Tool description
+
+A tool descriptions is
+- a 'name' used for user interaction,
+- a 'short' name used to create tool-specific files and directories,
+- a 'command' to run the tool, and
+- a 'graph' name used for keys and axes when drawing graphs.
+
+The graph name is optional, if none is provided benchi will use 'name' as the
+graph name.
+
+The actual syntax is
+               <desc> ::= <name> { <short> [<graph>] <command> }
+              <graph> ::= graph: <name>
+              <short> ::= short: [a-zA-Z0-9_-.]+
+            <command> ::= cmd: \"[^\\\"]+\"
+               <name> ::= [^\\n{{}}\\\"/]+
+
+## Example:
+
+> find in root {
+>   short: find_in_root
+>   cmd: \"find / -name\"
+>   graph: Find in Root
+> }
+
+# Options
+
+The configuration sets benchi's options directly if contains an `options` field
+of the form `options: \"[^\\\"]+\"`. Benchi will interpret the string as CLAs.
+
+The only exception difference is that CLAs have a mandatory configuration file
+argument while configuration file options do not. (It would not make any
+sense.)
+
+NB: actual CLAs override the options in the configuration file. See example
+below.
+
+## Example:
+
+> options: \"
+>   -v run -o output_<today>_at_<now> --tools 3 --benchs 1 -t 3s my_benchs
+> \"
+
+With these options in `my_conf`, then
+                   `benchi -q run --benchs 10 my_conf my_other_benchs`
+
+benchmarks 3 tools in parallel with a timeout of 3 seconds and dumps the output
+to `output_<today>_at_<now>` (see Path Substitution in the top-level help for
+details on `<today>` and `<now>`). BUT the rest of the configuration file's
+options (`-v` and `--tools`) are overriden by the CLAs, so benchi will run in
+quiet mode over 10 benchmarks in parallel, using `my_other_benchs` as the
+benchmark list file.\
+    ").arg(
+      Arg::with_name("CONF").help(
+        "\
+Dumps an example configuration file to <file.conf>, and a benchmark list file
+to <file.benchs>.\
+        "
+      ).required(true).index(1).value_name("file.conf")
+    ) ;
 
     self.subcommand(app)
   }

@@ -233,12 +233,12 @@ fn tool_confs<'a>(
     map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
       do_parse!(
-        tools: map!(
+        tool: map!(
           apply!(tool_conf, cnt),
           |(tool, len)| { cnt += len ; tool }
         ) >>
         map!( opt_spc_cmt, |add| cnt += add ) >> (
-          tools
+          tool
         )
       )
     ) >> ( (

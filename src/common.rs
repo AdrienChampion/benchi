@@ -122,6 +122,9 @@ pub enum Clap {
   Run(RunConf, Vec<ToolConf>),
   /// Plot mode.
   Plot(PlotConf, PlotKind),
+  /// Conf mode (explanation). Second parameter is the file to dump the
+  /// example configuration to.
+  Conf(GConf, String),
 }
 
 
@@ -257,7 +260,7 @@ pub trait GConfExt: ColorExt {
         ::std::io::ErrorKind::AlreadyExists => {
           ErrorKind::Msg(
             format!(
-              "file exists, not overwriting without {} option", self.emph("-f")
+              "file exists, not overwriting without {}", self.emph("-f")
             )
           ).into()
         },
@@ -833,14 +836,17 @@ impl<T> ::std::ops::Deref for Spnd<T> {
 
 /// Extends `Duration`.
 pub trait DurationExt {
-  /// Time in seconds with microsecond precision as string.
+  /// Time in seconds with nanosecond precision as string.
   #[inline]
   fn as_sec_str(& self) -> String ;
+  /// Zero duration.
+  #[inline]
+  fn zero() -> Duration { Duration::new(0, 0) }
 }
 impl DurationExt for Duration {
   fn as_sec_str(& self) -> String {
     format!(
-      "{}.{:0>6}", self.as_secs(), self.subsec_nanos() / 1_000u32
+      "{}.{:0>9}", self.as_secs(), self.subsec_nanos()
     )
   }
 }
@@ -913,4 +919,92 @@ impl StrExt for String {
   fn subst(& self, regex: & ::regex::Regex, something: & str) -> String {
     (self as & str).subst(regex, something)
   }
+}
+
+
+
+/// Dumps the example configuration file somewhere.
+pub fn example_conf_file(conf: & GConf, file: String) -> Res<()> {
+  use std::io::Write ;
+  log!{ conf => "Opening `{}`...", conf.emph(& file) }
+  let mut writer = conf.open_file_writer(& file).chain_err(
+    || format!(
+      "while opening example configuration file `{}` (write)",
+      conf.emph(& file)
+    )
+  ) ? ;
+  log!{ conf => "  writing example configuration..." }
+  writer.write( ::consts::ex_conf_file.as_bytes() ).chain_err(
+    || format!(
+      "while writing example configuration to file `{}`", conf.emph(& file)
+    )
+  ) ? ;
+  log!{ conf => "Done" ; "" }
+
+  let mut path = PathBuf::from(& file) ;
+  let was_okay = path.set_extension("benchs") ;
+  let bench_file = path.to_str().and_then(
+    |res| if was_okay { Some(res) } else { None }
+  ).ok_or_else::<Error,_>(
+    || format!(
+      "`{}` is not a valid file name", conf.emph(& file)
+    ).into()
+  ) ? ;
+  log!{ conf => "Opening `{}`...", conf.emph(bench_file) }
+  let mut writer = conf.open_file_writer(bench_file).chain_err(
+    || format!(
+      "while opening benchmark list file `{}`",
+      conf.emph(bench_file)
+    )
+  ) ? ;
+  log!{ conf => "  writing benchmark list file..." }
+  writer.write( ::consts::ex_bench_file.as_bytes() ).chain_err(
+    || format!(
+      "while writing example configuration to file `{}`", conf.emph(bench_file)
+    )
+  ) ? ;
+  log!{
+    conf =>
+      "Done" ;
+      "" ;
+      "{} for using benchi.", conf.happy("Thank you") ;
+      "Make sure to read `{}` to understand what's going on.",
+      conf.emph("benchi help run") ;
+      "" ;
+
+      "Get started by running" ;
+      "> {} {} {} {}",
+      conf.happy("benchi"), conf.emph("run"), file, bench_file ;
+      "This will run up to 4 threads in parallel. If that's too much try" ;
+      "> {} {} --tools 1 {} {}",
+      conf.happy("benchi"), conf.emph("run"), file, bench_file ;
+      "" ;
+
+      "The commands above dump data to `{}`", conf.emph(
+        "example/<today>_at_<now>"
+      ) ;
+      "  where <today> is today's date `YYYY_MM_DD`" ;
+      "  and <now> is the current time `HH_MM`." ;
+      "" ;
+
+      "Generate a nice cumulative plot of all the results with" ;
+      "> {} {} example/graphs/cumul.plot \
+      {} example/<today>_at_<now>/*.data",
+      conf.happy("benchi"), conf.emph("plot"), conf.emph("cumul") ;
+      "If you have gnuplot, benchi will generate `example/graphs/cumul.pdf` \
+      automatically." ;
+      "" ;
+
+      "Or generate a comparative scatterplot between two of them with, e.g." ;
+      "> {} {} example/graphs/cmp.plot \\",
+      conf.happy("benchi"), conf.emph("plot") ;
+      "         {} example/<today>_at_<now>/home_find.data",
+      conf.emph("compare") ;
+      "                 example/<today>_at_<now>/tmp_find.data" ;
+      "If you have gnuplot, benchi will generate `example/graphs/cmp.pdf` \
+      automatically." ;
+      "" ;
+      "Make sure to read `{}`.", conf.emph("benchi help plot")
+  }
+  Ok(())
 }

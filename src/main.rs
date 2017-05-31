@@ -200,6 +200,12 @@ fn main() {
       }
     },
 
+    Ok( Clap::Conf(conf, file) ) => {
+      if let Err(e) = common::example_conf_file(& conf, file) {
+        print_err(& conf, e, true)
+      }
+    },
+
     Err(e) => print_err(& GConf::default(), e, true)
   }
 

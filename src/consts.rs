@@ -110,3 +110,68 @@ Regex matching a timeout result. Two groups: seconds and micros of timeout.
   }
 }
 
+/// Example configuration file.
+pub static ex_conf_file: & str = r#"// Example configuration file.
+
+// Run `benchi help conf` for further details.
+
+// Setting `run` options. Each of these options can be overriden with command-
+// line arguments.
+options: "-v run -o example/<today>_at_<now> --tools 2 --benchs 3 -t 5s"
+
+// So `benchi -q run -t 3min <this file>` overrides the verbosity setting and
+// the timeout from the options above.
+
+find at root {
+  short: root_find
+  graph: Find at Root
+  cmd: "find / -iname"
+}
+
+Find in Current Directory {
+  short: curr_dir_find
+  // Graph name is optional, none provided here so benchi will use the 'name'
+  // of the tool instead: `Find in Current Directory` here.
+  cmd: "find . -iname"
+}
+
+Find in Tmp {
+  short: tmp_find
+  cmd: "find /tmp -iname"
+}
+
+Find in Home {
+  short: home_find
+  cmd: "find /home -iname"
+}
+
+"# ;
+
+
+/// Example benchmark file.
+pub static ex_bench_file: & str = r#"[aA]*
+[bB]*
+[cC]*
+[dD]*
+[eE]*
+[fF]*
+[gG]*
+[hH]*
+[iI]*
+[jJ]*
+[kK]*
+[lL]*
+[mM]*
+[nN]*
+[oO]*
+[pP]*
+[qQ]*
+[rR]*
+[sS]*
+[tT]*
+[uU]*
+[vV]*
+[wW]*
+[xX]*
+[yY]*
+[zZ]*"# ;

@@ -67,13 +67,9 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   // let error_time_2 = ::std::cmp::max(
   //   data_2.max_time() + data_2.max_time() / 5, data_2.max_time() + 2_000_000
   // ) ;
-  let tmo_time_1 = ::std::cmp::max(
-    max_time + max_time / 4, max_time + 1_000_000
-  ) ;
+  let tmo_time_1 = max_time + max_time / 10 ;
   let tmo_time_2 = tmo_time_1 ;
-  let error_time_1 = ::std::cmp::max(
-    max_time + max_time / 2, max_time + 2_000_000
-  ) ;
+  let error_time_1 = max_time + max_time / 5 ;
   let error_time_2 = error_time_1 ;
 
 
@@ -140,16 +136,10 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
           d_1.unwrap_or( Data::Error ), d_2.unwrap_or( Data::Error )
         ) ;
         if d_1.is_err() && d_2.is_err() {
-          dble_errors += 1 ;
-          errors_1 += 1 ;
-          errors_2 += 1 ;
-          continue 'iter_benchs
+          dble_errors += 1
         }
         if d_1.is_tmo() && d_2.is_tmo() {
-          dble_timeouts += 1 ;
-          timeouts_1 += 1 ;
-          timeouts_2 += 1 ;
-          continue 'iter_benchs
+          dble_timeouts += 1
         }
 
         let time_1 = d_1.map(
@@ -174,7 +164,9 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
         ) ;
 
         file.write_all(
-          format!("{} {}\n", time_1, time_2).as_bytes()
+          format!(
+            "{} {}\n", time_1.as_sec_str(), time_2.as_sec_str()
+          ).as_bytes()
         ).chain_err(
           || format!(
             "while writing to comparison data file `{}`",
@@ -231,20 +223,26 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
       data_2.tool.name, timeouts_2, errors_2,
     ) ;
     if dble_timeouts > 0 {
+      log!{
+        conf => "  {} {}", dble_timeouts, conf.sad("double timeouts")
+      }
       title = format!(
         "{}\\n{} double timeouts (both timeout-ed)", title, dble_timeouts
       )
     }
     if dble_errors > 0 {
+      log!{
+        conf => "  {} {}", dble_errors, conf.bad("double errors")
+      }
       title = format!(
-        "{}\\n{} double errors (both failed)", title, dble_timeouts
+        "{}\\n{} double errors (both failed)", title, dble_errors
       )
     }
     format!("set title \"{}\"", title)
   } else { "".into() } ;
 
-  let err_time = error_time_1 as f64 / 1_000_000.0 ;
-  let tmo_time = tmo_time_1 as f64 / 1_000_000.0 ;
+  let err_time = error_time_1 ;
+  let tmo_time = tmo_time_1 ;
 
   // println!("err time: {}, tmo time: {}", err_time, tmo_time) ;
 
@@ -275,15 +273,15 @@ plot \\
   {} t 'Timeout' with lines ls 3, \\
   {} t 'Error' with lines ls 4, \\
   x notitle with lines ls 2, \\
-  '{}' using ($1/1000000):($2/1000000) notitle with points ls 1
+  '{}' using 1:2 notitle with points ls 1
 \
         ", pdf_file,
-        data_1.tool.name, data_2.tool.name,
-        min_time as f64 / 1_000_000.0, err_time + err_time / 10.0,
-        min_time as f64 / 1_000_000.0, err_time + err_time / 10.0,
-        tmo_time, tmo_time,
-        err_time, err_time,
-        tmo_time, err_time,
+        data_1.tool.graph, data_2.tool.graph,
+        min_time.as_sec_str(), (err_time + err_time / 10).as_sec_str(),
+        min_time.as_sec_str(), (err_time + err_time / 10).as_sec_str(),
+        tmo_time.as_sec_str(), tmo_time.as_sec_str(),
+        err_time.as_sec_str(), err_time.as_sec_str(),
+        tmo_time.as_sec_str(), err_time.as_sec_str(),
         data_file
       ).as_bytes()
     )

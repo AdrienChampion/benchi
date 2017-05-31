@@ -62,6 +62,24 @@ impl ToolRun {
         Ok( (tool, bench) ) => {
           // Work...
           let res = self.run(tool, bench) ;
+          // if let Ok(ref res) = res {
+          //   println!(
+          //     "{} on {} ({})\n  {}\n  {}.{:0>9}",
+          //     self.instance[tool].name,
+          //     self.instance.str_of_bench(bench),
+          //     {
+          //       let mut cmd = self.instance[tool].cmd[0].to_string() ;
+          //       for s in & self.instance[tool].cmd[1..] {
+          //         cmd.push(' ') ;
+          //         cmd.push_str(s)
+          //       }
+          //       cmd
+          //     },
+          //     res.0.as_sec_str(),
+          //     res.0.as_secs(),
+          //     res.0.subsec_nanos(),
+          //   )
+          // }
           // Delete error file if empty.
           let path = self.instance.err_path_of(
             & self.conf, tool, bench
