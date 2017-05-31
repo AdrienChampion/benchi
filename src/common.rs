@@ -315,6 +315,7 @@ impl PlotConf {
   pub fn mk(
     file: String, pdf: bool, then: Option<String>, gconf: GConf
   ) -> Self {
+    let file = file.path_subst() ;
     PlotConf { file, pdf, then, gconf }
   }
 }
@@ -365,6 +366,7 @@ impl RunConf {
     out_dir: String, tool_file: String, bench_file: String,
     gconf: GConf,
   ) -> Self {
+    let out_dir = out_dir.path_subst() ;
     RunConf {
       bench_par, tool_par, timeout, try,
       out_dir, tool_file, bench_file,
@@ -451,7 +453,7 @@ impl ToolConf {
       if line.len() < len + 1 || & line[0..len] != * graph_name_key {
         bail!(
           format!(
-            "illegal dump file, second line should be \
+            "illegal dump file, third line should be \
             `{}<tool graph name>`", * graph_name_key
           )
         )
@@ -467,7 +469,7 @@ impl ToolConf {
       if line.len() < len + 1 || & line[0..len] != * cmd_key {
         bail!(
           format!(
-            "illegal dump file, second line should be \
+            "illegal dump file, fourth line should be \
             `{}<tool cmd>`", * cmd_key
           )
         )
@@ -878,5 +880,37 @@ impl Plot {
     file: Option<String>, tools: Vec<String>
   ) -> Self {
     Plot::Cumulative { file, tools }
+  }
+}
+
+
+/// Extends string types with a substitution function.
+pub trait StrExt {
+  /// Replaces all non-ovelapping matches of a regex with something.
+  fn subst(& self, regex: & ::regex::Regex, something: & str) -> String ;
+  /// Performs path substitutions: `today` and `now`.
+  fn path_subst(& self) -> String {
+    use chrono::{ Local, Datelike, Timelike } ;
+    use consts::subst::{ today_re, now_re } ;
+    let today = Local::today() ;
+    let today = & format!(
+      "{}_{:0>2}_{:0>2}", today.year(), today.month(), today.day()
+    ) ;
+    let now = Local::now() ;
+    let now = & format!(
+      "{:0>2}_{:0>2}", now.hour(), now.minute()
+    ) ;
+    let res = self.subst(& * today_re, today) ;
+    res.subst(& * now_re, now)
+  }
+}
+impl StrExt for str {
+  fn subst(& self, regex: & ::regex::Regex, something: & str) -> String {
+    format!( "{}", regex.replace_all(self, something) )
+  }
+}
+impl StrExt for String {
+  fn subst(& self, regex: & ::regex::Regex, something: & str) -> String {
+    (self as & str).subst(regex, something)
   }
 }

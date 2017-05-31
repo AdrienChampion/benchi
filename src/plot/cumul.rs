@@ -23,7 +23,9 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
   let mut bench_count = 0 ;
   for file in & files {
     let data = ToolData::cumul_of_file(conf, & file).chain_err(
-      || format!("while preparing for cumulative plot generation")
+      || format!(
+        "while preparing for cumulative plot generation for `{}`", file
+      )
     ) ? ;
     bench_count = ::std::cmp::max( bench_count, data.res.len() ) ;
     if ! data.res.is_empty() {

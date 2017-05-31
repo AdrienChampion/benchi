@@ -1,4 +1,4 @@
-options: "-v run -o output --tools 3 --benchs 1 -t 3s benchs"
+options: "-v run -o output_<today>_at_<now> --tools 3 --benchs 1 -t 3s benchs"
 
 find 1 {
   short: find_1

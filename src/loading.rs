@@ -2,7 +2,7 @@
 
 use common::* ;
 use errors::* ;
-use consts::re::data::* ;
+use consts::data::* ;
 
 /// Seconds and microseconds from a regex match.
 fn micros_of_time_re<'a>(cap: ::regex::Captures<'a>) -> Res<u64> {
@@ -148,7 +148,7 @@ impl<T> ToolData<T> {
         || "while retrieving the line for timeout info".into()
       )
     ).and_then(
-      |line| if let Some(cap) = ::consts::re::dump::timeout.captures(& line) {
+      |line| if let Some(cap) = ::consts::dump::timeout_re.captures(& line) {
         micros_of_time_re(cap).map(
           |micros| {
             let secs = micros / 1_000_000 ;

@@ -159,44 +159,6 @@ fn main() {
   match clap::work() {
     Ok( Clap::Run(mut conf, tools) ) => {
 
-      // Change output directory to the date if it's `"today"`.
-      {
-        let mut path = PathBuf::from(& conf.out_dir) ;
-        if let Some(name) = PathBuf::from(& conf.out_dir).file_name() {
-          use chrono::{ Datelike, Timelike } ;
-          match name.to_str() {
-            Some("today") => {
-              path.pop() ;
-              let today = chrono::Local::today() ;
-              path.push(
-                format!(
-                  "{}_{:0>2}_{:0>2}",
-                  today.year(), today.month(), today.day()
-                )
-              ) ;
-              if let Some(out_dir) = path.to_str() {
-                conf.out_dir = out_dir.into()
-              }
-            },
-            Some("now") => {
-              path.pop() ;
-              let now = chrono::Local::now() ;
-              path.push(
-                format!(
-                  "{}_{:0>2}_{:0>2}_at_{:0>2}{:0>2}",
-                  now.year(), now.month(), now.day(),
-                  now.hour(), now.minute()
-                )
-              ) ;
-              if let Some(out_dir) = path.to_str() {
-                conf.out_dir = out_dir.into()
-              }
-            },
-            _ => (),
-          }
-        }
-      }
-
       log!{
         conf, verb =>
           "{}:", conf.emph("Configuration") ;

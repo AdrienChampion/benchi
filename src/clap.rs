@@ -295,7 +295,7 @@ pub fn work() -> Res< Clap > {
     }
   }
 
-  bail!("expected command, found nothing")
+  bail!("called with unimplemented command")
 
 }
 
@@ -328,7 +328,7 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
     ).author(
       crate_authors!()
     ).about(
-      "`benchi` is a customizable benchmarking tool."
+      "`benchi` is an easy to use benchmarking tool."
     ).arg(
       Arg::with_name("force").short("-f").long("--force").help(
         "When writing a file, overwrite if present"
@@ -347,7 +347,16 @@ impl<'a, 'b> AppExt for App<'a, 'b> {
       ).default_value("on").takes_value(true).validator(
         bool_validator
       ).value_name(bool_format)
-    )
+    ).after_help(
+      "\
+# Path substitutions
+
+Output paths such as `run`'s output directory or `plot`'s output file can use
+benchi's substitution mechanism. That is, occurrences of `<today>` are replaced
+with `<year>_<month>_<day>` and occurrences of `<now>` are replaced with
+`<hour>_<minute>`.
+      "
+    ).setting( AppSettings::SubcommandRequired )
   }
 
   fn run_opts(
@@ -382,12 +391,8 @@ sequentially\
       "
     ).arg(
       Arg::with_name("out_dir").short("-o").long("--out_dir").help(
-        "\
-Sets the output directory. If the path ends with `today` (`now`), then `today`
-(`now`) will be replaced with `<y>_<m>_<d>` (`<y>_<m>_<d>_at_<h><min>`)
-representing the current date (and time).\
-        "
-      ).value_name("dir").default_value("today").takes_value(true)
+        "Sets the output directory."
+      ).value_name("dir").default_value("<today>_at_<now>").takes_value(true)
     ).arg(
       Arg::with_name("timeout").short("-t").long("--timeout").help(
         "Sets the timeout for each run"
@@ -434,7 +439,7 @@ specified in the configuration file.\
 
     let app = SubCommand::with_name("plot").about(
       "Generates a plot."
-    ).arg(
+    ).setting( AppSettings::SubcommandRequired ).arg(
       Arg::with_name("then").long("--then").help(
         "\
 Specifies a command to run on the pdf generated (ignored if `--pdf off`)\
@@ -495,8 +500,8 @@ Second data file (y axis)\
     use clap_lib::* ;
 
     let app = SubCommand::with_name("inspect").about(
-      "Interactive data inspection."
-    ) ;
+      "Interactive data inspection. (UNIMPLEMENTED)"
+    ).about("UNIMPLEMENTED") ;
 
     self.subcommand(app)
   }
