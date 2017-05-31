@@ -324,7 +324,8 @@ impl PlotConf {
 }
 
 
-/// Run configuration.
+/// Run configuration. Constructor is private on purpose, it does path
+/// substitution.
 #[derive(Debug)]
 pub struct RunConf {
   /// Number of parallel bench runs.
@@ -341,6 +342,8 @@ pub struct RunConf {
   pub bench_file: String,
   /// Trying?
   pub try: Option<usize>,
+  /// Logging stdout?
+  pub log_stdout: bool,
   /// Global configuration.
   gconf: GConf,
 }
@@ -353,6 +356,7 @@ impl Default for RunConf {
       bench_par: 1, tool_par: 1,
       timeout: Duration::new(60, 0),
       try: None,
+      log_stdout: true,
       out_dir: ".".into(),
       tool_file: "tools.conf".into(),
       bench_file: "bench.file".into(),
@@ -365,13 +369,13 @@ impl RunConf {
   #[inline]
   pub fn mk(
     bench_par: usize, tool_par: usize,
-    timeout: Duration, try: Option<usize>,
+    timeout: Duration, try: Option<usize>, log_stdout: bool,
     out_dir: String, tool_file: String, bench_file: String,
     gconf: GConf,
   ) -> Self {
     let out_dir = out_dir.path_subst() ;
     RunConf {
-      bench_par, tool_par, timeout, try,
+      bench_par, tool_par, timeout, try, log_stdout,
       out_dir, tool_file, bench_file,
       gconf
     }
@@ -642,13 +646,22 @@ impl Instance {
     format!("{:0>1$}", * index, format!("{}", self.benchs.len()).len())
   }
 
+  /// Path to the directory of a tool.
+  #[inline]
+  pub fn path_of_tool(
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
+  ) -> PathBuf {
+    let mut path = PathBuf::from(& conf.out_dir) ;
+    path.push( & self[tool].short ) ;
+    path
+  }
+
   /// Stderr directory path of a tool.
   #[inline]
   pub fn err_path_of_tool(
     & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> PathBuf {
-    let mut path = PathBuf::from( & conf.out_dir ) ;
-    path.push( & self[tool].short ) ;
+    let mut path = self.path_of_tool(conf, tool) ;
     path.push("err") ;
     path
   }
@@ -657,8 +670,7 @@ impl Instance {
   pub fn out_path_of_tool(
     & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> PathBuf {
-    let mut path = PathBuf::from( & conf.out_dir ) ;
-    path.push( & self[tool].short ) ;
+    let mut path = self.path_of_tool(conf, tool) ;
     path.push("out") ;
     path
   }

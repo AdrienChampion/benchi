@@ -428,6 +428,14 @@ sequentially\
         int_validator
       )
     ).arg(
+      Arg::with_name("log_stdout").long("--log").help(
+        "\
+(De)activates stdout logging of the tools.\
+        "
+      ).default_value("on").takes_value(true).validator(
+        bool_validator
+      ).value_name(bool_format)
+    ).arg(
       Arg::with_name("BENCHS").help(
         "\
 The file containing the inputs to give to the tools. Optional, can be
@@ -720,6 +728,15 @@ impl<'a> Matches<'a> {
       "unreachable(timeout): input validated in clap"
     ) ;
     
+    let log_stdout = self.sub_value_of("run", "log_stdout").and_then(
+      |s| {
+        bool_of_str(& s)
+      }
+    ).expect(
+      "unreachable(log_stdout): \
+      default is provided and input validated in clap"
+    ) ;
+    
     let tool_file = self.sub_value_of("run", "CONF").expect(
       "unreachable(CONF): required"
     ).to_string() ;
@@ -735,7 +752,7 @@ impl<'a> Matches<'a> {
 
     Ok(
       RunConf::mk(
-        bench_par, tool_par, timeout, try,
+        bench_par, tool_par, timeout, try, log_stdout,
         out_dir, tool_file, bench_file,
         conf
       )

@@ -15,11 +15,17 @@ pub use std::sync::mpsc::{
 
 /// Sets the pipes for a command.
 #[cfg(not(windows))]
-pub fn set_pipes(cmd: & mut Command, out_file: File, err_file: File) {
+pub fn set_pipes(
+  cmd: & mut Command, out_file: Option<File>, err_file: File
+) {
   use std::os::unix::io::{ IntoRawFd, FromRawFd } ;
-  let out = unsafe { Stdio::from_raw_fd(out_file.into_raw_fd()) } ;
+  if let Some(out_file) = out_file {
+    let out = unsafe { Stdio::from_raw_fd(out_file.into_raw_fd()) } ;
+    cmd.stdout(out) ;
+  } else {
+    cmd.stdout( Stdio::null() ) ;
+  }
   let err = unsafe { Stdio::from_raw_fd(err_file.into_raw_fd()) } ;
-  cmd.stdout(out) ;
   cmd.stderr(err) ;
   cmd.stdin( Stdio::null() ) ;
 }

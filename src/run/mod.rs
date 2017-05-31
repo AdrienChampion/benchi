@@ -123,7 +123,11 @@ impl ToolRun {
     cmd_str.push(' ') ;
     cmd_str.push_str(bench) ;
     let (stdout_file, stderr_file) = (
-      self.open_stdout_file_for(tool_idx, bench_idx)?,
+      if self.conf.log_stdout {
+        Some( self.open_stdout_file_for(tool_idx, bench_idx)? )
+      } else {
+        None
+      },
       self.open_stderr_file_for(tool_idx, bench_idx)?
     ) ;
     set_pipes(& mut cmd, stdout_file, stderr_file) ;
@@ -172,10 +176,13 @@ impl ToolRun {
     & self, tool: ToolIndex, bench: BenchIndex
   ) -> Res<File> {
     let path = self.instance.out_path_of(& self.conf, tool, bench) ;
-    self.conf.open_file_writer(path).chain_err(
+    self.conf.open_file_writer(& path).chain_err(
       || format!(
-        "while opening error file to write stderr \
+        "while opening file `{}` to write stdout \
         of {} running on {}",
+        path.to_str().map(|s| s.to_string()).unwrap_or_else(
+          || format!("{:?}", path)
+        ),
         self.conf.emph( & self.instance[tool].name ),
         self.conf.emph( self.instance.str_of_bench(bench) )
       )
@@ -373,7 +380,9 @@ impl Master {
     for tool in instance.tools() {
       avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
       instance.mk_err_dir(& conf, tool)? ;
-      instance.mk_out_dir(& conf, tool)? ;
+      if conf.log_stdout {
+        instance.mk_out_dir(& conf, tool)?
+      } ;
       let mut path = PathBuf::new() ;
       path.push(& conf.out_dir) ;
       path.push( format!("{}.data", instance[tool].short) ) ;
@@ -509,7 +518,7 @@ impl Master {
 
           // If that was the last bench, try to delete err directory if empty.
           if self.instance.is_last_bench(bench) {
-            self.try_delete_err_dir(tool)
+            self.cleanup(tool)
           }
 
           let (time, status) = res.chain_err(
@@ -563,8 +572,18 @@ impl Master {
     Ok(false)
   }
 
+  /// Deletes the directories of a tool if they're not empty.
+  ///
+  /// First tries the error directory, and then the tool's directory.
+  fn cleanup(& self, tool: ToolIndex) {
+    let deleted_err_dir = self.try_delete_err_dir(tool) ;
+    if deleted_err_dir {
+      self.try_delete_dir(tool) ;
+    }
+  }
+
   /// Deletes the error directory of some tool if it's empty.
-  fn try_delete_err_dir(& self, tool: ToolIndex) {
+  fn try_delete_err_dir(& self, tool: ToolIndex) -> bool {
     let path = self.instance.err_path_of_tool(& self.conf, tool) ;
     let empty = path.as_path().read_dir().map(
       |mut rd| rd.next().is_none()
@@ -572,6 +591,19 @@ impl Master {
     if empty {
       let _ = ::std::fs::remove_dir(path) ;
     }
+    empty
+  }
+
+  /// Deletes the directory of some tool if it's empty.
+  fn try_delete_dir(& self, tool: ToolIndex) -> bool {
+    let path = self.instance.path_of_tool(& self.conf, tool) ;
+    let empty = path.as_path().read_dir().map(
+      |mut rd| rd.next().is_none()
+    ).unwrap_or(false) ;
+    if empty {
+      let _ = ::std::fs::remove_dir(path) ;
+    }
+    empty
   }
 
 }
