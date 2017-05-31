@@ -200,9 +200,23 @@ impl<T> ToolData<T> {
       }
     }
 
-    let data_file = format!(
-      "{}.{}.data", conf.file, tool.short
-    ) ;
+    let data_file = {
+      let mut path = PathBuf::from(& conf.file) ;
+      let data_file = path.file_stem().and_then(
+        |file| file.to_str()
+      ).map(
+        |file| format!("{}_{}.data", file, tool.short)
+      ).unwrap_or_else(
+        || format!("{}.data", tool.short)
+      ) ;
+      path.pop() ;
+      path.push(& data_file) ;
+      if let Some(file) = path.to_str() { file.to_string() } else {
+        bail!(
+          format!("illegal data file path `{}`", conf.file)
+        )
+      }
+    } ;
 
     Ok(
       ToolData {

@@ -126,7 +126,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
         "while writing to plot file `{}`", conf.emph(& conf.file)
       )
     ) ? ;
-    // "output/cumul.plot.find_3.data" using 1:2 smooth cumulative t 'find 3 (4)'
+
     for (index, data) in data_iter {
       file.write_all(
         format!(
@@ -216,8 +216,8 @@ set xtics nomirror
 set ytics nomirror
 set grid
 
-set xlabel "Benchmarks passed" textcolor rgbcolor "0x000000"
-set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
+set xlabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
+set ylabel "Benchmarks passed" textcolor rgbcolor "0x000000"
 
 set key above samplen 2 font ",11"
 
