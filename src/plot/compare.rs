@@ -77,7 +77,23 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   let error_time_2 = error_time_1 ;
 
 
-  let data_file = format!("{}.data", conf.file) ;
+  let data_file = {
+    let mut path = PathBuf::from(& conf.file) ;
+    let data_file = path.file_stem().and_then(
+      |file| file.to_str()
+    ).map(
+      |file| format!("{}.data", file)
+    ).unwrap_or_else(
+      || format!("compare.data")
+    ) ;
+    path.pop() ;
+    path.push(& data_file) ;
+    if let Some(file) = path.to_str() { file.to_string() } else {
+      bail!(
+        format!("illegal data file path `{}`", conf.file)
+      )
+    }
+  } ;
   log!{
     conf, verb => "  writing data file `{}`...", conf.emph(& data_file)
   }
