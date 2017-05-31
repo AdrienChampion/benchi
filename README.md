@@ -75,7 +75,7 @@ benchi plot help cumul
 
 In the keys, the number between parentheses is the number of benchmark passed.
 
-![Cumulative plot](rsc/graphs/cumul.svg)
+![Cumulative plot](rsc/graphs/cumul.svg?raw=true)
 
 ## Comparative plot
 
@@ -86,6 +86,6 @@ benchi plot help compare
 
 Comparative between two runs. The timeout used during the runs was 100 seconds, notice that the timeout line is actually slightly above the real timeout value to distinguish timeouts from almost-timeouts.
 
-![Comparative plot](rsc/graphs/compare.svg)
+![Comparative plot](rsc/graphs/compare.svg?raw=true)
 
 [rust]: https://www.rust-lang.org/en-US/install.html (Install Rust)
