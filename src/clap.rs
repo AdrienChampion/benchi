@@ -248,18 +248,42 @@ pub fn work() -> Res< Clap > {
       "unreachable(plot:cumul:FILE): required"
     ).to_string() ;
 
-    let pdf = bool_of_str(
-      plot_matches.value_of("pdf").expect(
-        "unreachable(plot:pdf): default provided"
+    let run_gp = bool_of_str(
+      plot_matches.value_of("run_gp").expect(
+        "unreachable(plot:run_gp): default provided"
       )
     ).expect(
-      "unreachable(plot:pdf): input validated in clap"
+      "unreachable(plot:run_gp): input validated in clap"
     ) ;
 
-    let cmd = if pdf {
+    let no_errors = bool_of_str(
+      plot_matches.value_of("no_errors").expect(
+        "unreachable(plot:no_errors): default provided"
+      )
+    ).expect(
+      "unreachable(plot:no_errors): input validated in clap"
+    ) ;
+
+    let errs_as_tmo = bool_of_str(
+      plot_matches.value_of("errs_as_tmo").expect(
+        "unreachable(plot:errs_as_tmo): default provided"
+      )
+    ).expect(
+      "unreachable(plot:errs_as_tmo): input validated in clap"
+    ) ;
+
+    let fmt = PlotFmt::of_str(
+      plot_matches.value_of("gp_fmt").expect(
+        "unreachable(plot:gp_fmt): default provided"
+      )
+    ).expect(
+      "unreachable(plot:gp_fmt): input validated in clap"
+    ) ;
+
+    let cmd = if run_gp {
       plot_matches.value_of("then").map(|s| s.to_string())
     } else { None } ;
-    
+
     if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
       let mut data_files = vec![] ;
       for data_file in cumul_matches.values_of("DATA").expect(
@@ -270,7 +294,7 @@ pub fn work() -> Res< Clap > {
 
       return Ok(
         Clap::Plot(
-          PlotConf::mk(file, pdf, cmd, conf),
+          PlotConf::mk(file, run_gp, cmd, fmt, no_errors, errs_as_tmo, conf),
           PlotKind::Cumul { files: data_files }
         )
       )
@@ -286,7 +310,7 @@ pub fn work() -> Res< Clap > {
 
       return Ok(
         Clap::Plot(
-          PlotConf::mk(file, pdf, cmd, conf),
+          PlotConf::mk(file, run_gp, cmd, fmt, no_errors, errs_as_tmo, conf),
           PlotKind::Compare {
             file_1: file_1.into(),
             file_2: file_2.into()
@@ -464,13 +488,38 @@ Specifies a command to run on the pdf generated (ignored if `--pdf off`)\
         "
       ).value_name("command").takes_value(true)
     ).arg(
-      Arg::with_name("pdf").long("--pdf").help(
+      Arg::with_name("run_gp").long("--run_gp").help(
         "\
-Runs `gnuplot` to actually generate the pdf `<plot file>.pdf`\
+Runs `gnuplot` (or not) to generate the final plot\
         "
       ).default_value("on").takes_value(true).validator(
         bool_validator
       ).value_name(bool_format)
+    ).arg(
+      Arg::with_name("no_errors").long("--no_errs").help(
+        "\
+Completely ignore benchmarks for which at least one tool returned an error\
+        "
+      ).default_value("off").takes_value(true).validator(
+        bool_validator
+      ).value_name(bool_format)
+    ).arg(
+      Arg::with_name("errs_as_tmo").long("--errs_as_tmo").help(
+        "\
+Consider errors as timeouts\
+        "
+      ).default_value("off").takes_value(true).validator(
+        bool_validator
+      ).value_name(bool_format)
+    ).arg(
+      Arg::with_name("gp_fmt").long("--to").help(
+        "\
+Specifies the format the plot should generate (latex format is a bit
+experimental for now)\
+        "
+      ).default_value("pdf").takes_value(true).validator(
+        PlotFmt::validator
+      ).value_name( PlotFmt::values() )
     ).arg(
       Arg::with_name("PLOT_FILE").help(
         "\

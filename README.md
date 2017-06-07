@@ -56,10 +56,16 @@ benchi conf example/test.conf
 
 After creating the example configuration file, benchi will let you know about a few things you can do with it: running the "tools" it defines and generate plots of the results.
 
+Running benchmarks is done through the `run` subcommand. Read more about it with
+
+```bash
+benchi help run
+```
+
 
 # Gallery
 
-Here are the two kinds of graphs benchi can generate. The `gnuplot` file can be tweaked directly, there is currently not many ways to do it directly from benchi.
+Here are the two kinds of graphs benchi can generate. The `gnuplot` file can be tweaked directly, there is currently not many ways to do it from benchi.
 
 ```bash
 # To read more about plots:

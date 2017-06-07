@@ -122,7 +122,7 @@ impl<T> ToolData<T> {
   /// Creates a tool data from a file.
   #[inline]
   fn polymorphic_of_file<
-    P: AsRef<Path>, F: Fn( Vec<(BenchIndex, Data)>, Duration ) -> T
+    P: AsRef<Path>, F: Fn( Vec<(BenchIndex, Data)>, Duration ) -> Res<T>
   >(
     conf: & PlotConf, path: P, treatment: F
   ) -> Res<Self> {
@@ -222,25 +222,34 @@ impl<T> ToolData<T> {
 
     Ok(
       ToolData {
-        tool, timeout, file: data_file, res: treatment(vec, timeout)
+        tool, timeout, file: data_file, res: treatment(vec, timeout)?
       }
     )
   }
 }
 
-impl ToolData< (Duration, Duration, HashMap<BenchIndex, Data>) > {
-  /// Creates a tool data for a comparative plot from a file.
+impl ToolData<
+  ( Duration, Duration, HashMap<BenchIndex, Data> )
+> {
+  /// Creates a tool data for a comparative plot from a file. Returns the max
+  /// bench index plus one, zero if there was no bench.
   #[inline]
   pub fn compare_of_file<P: AsRef<Path>>(
     conf: & PlotConf, path: P
-  ) -> Res<Self> {
+  ) -> Res< (Self, usize) > {
     ToolData::polymorphic_of_file(
       conf, path, |vec, timeout| {
         let mut map = HashMap::with_capacity( vec.len() ) ;
         let mut max_time = Duration::zero() ;
         let mut min_time = None ;
         let mut tmo = None ;
+        let mut max_index = None ;
         for (bench, data) in vec {
+          max_index = Some(
+            ::std::cmp::max(
+              max_index.unwrap_or(* bench), * bench
+            )
+          ) ;
           match & data {
             & Data::Success(time) => {
               max_time = ::std::cmp::max(max_time, time) ;
@@ -254,14 +263,32 @@ impl ToolData< (Duration, Duration, HashMap<BenchIndex, Data>) > {
             _ => (),
           }
           let was_there = map.insert(bench, data) ;
-          assert!( was_there.is_none() )
+          if let Some(_) = was_there {
+            bail!(
+              format!(
+                "benchmark number {} appears twice",
+                conf.bad( & format!("{}", bench) )
+              )
+            )
+          }
         }
-        (
+        Ok((
           min_time.unwrap_or( Duration::new(0, 1_000) ),
           tmo.unwrap_or(max_time),
-          map
-        )
+          ( map, max_index.map(|max| max + 1).unwrap_or(0) )
+        ))
       },
+    ).map(
+      |data| {
+        let (time_1, time_2, (map, max)) = data.res ;
+        let data = ToolData {
+          tool: data.tool,
+          timeout: data.timeout,
+          file: data.file,
+          res: (time_1, time_2, map),
+        } ;
+        (data, max)
+      }
     )
   }
 
@@ -312,7 +339,7 @@ impl ToolData< Vec<Duration> > {
         }
         res.shrink_to_fit() ;
         res.sort() ;
-        res
+        Ok(res)
       },
     )
   }

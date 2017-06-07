@@ -127,6 +127,73 @@ pub enum Clap {
   Conf(GConf, String),
 }
 
+/// Plot formats.
+#[derive(Clone, Copy, Debug)]
+pub enum PlotFmt {
+  /// PDF.
+  Pdf,
+  /// SVG.
+  Svg,
+  /// PNG.
+  Png,
+  /// LaTeX.
+  Tex,
+}
+impl PlotFmt {
+
+  /// Extension of a format.
+  pub fn ext(& self) -> & 'static str {
+    match * self {
+      PlotFmt::Pdf => "pdf",
+      PlotFmt::Svg => "svg",
+      PlotFmt::Png => "png",
+      PlotFmt::Tex => "tex",
+    }
+  }
+  /// Gnuplot terminal of a format.
+  pub fn term(& self) -> & 'static str {
+    match * self {
+      PlotFmt::Pdf => "\
+        set term pdf enhanced \
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Svg => "\
+        set term svg enhanced\
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Png => "\
+        set term pngcairo enhanced\
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Tex => "set term latex",
+    }
+  }
+  /// Describes the legal values of the flag, should match the body of
+  /// `Self::of_str`.
+  #[inline]
+  pub fn values() -> & 'static str {
+    "pdf|svg|png|tex"
+  }
+  /// Plot format of a string. Update `Self::values` if you change this.
+  pub fn of_str(s: & str) -> Option<Self> {
+    match s {
+      "pdf" => Some(PlotFmt::Pdf),
+      "svg" => Some(PlotFmt::Svg),
+      "png" => Some(PlotFmt::Png),
+      "tex" => Some(PlotFmt::Tex),
+      _ => None,
+    }
+  }
+  /// Plot format string validator.
+  pub fn validator(s: String) -> Result<(), String> {
+    if let None = PlotFmt::of_str(& s) {
+      Err( format!("expected `{}`, got `{}`", Self::values(), s) )
+    } else {
+      Ok(())
+    }
+  }
+}
+
 
 /// Can color things.
 pub trait ColorExt {
@@ -306,6 +373,12 @@ pub struct PlotConf {
   pub pdf: bool,
   /// Command to run.
   pub then: Option<String>,
+  /// Gnuplot format (terminal).
+  pub fmt: PlotFmt,
+  /// Ignore errors?
+  pub no_errors: bool,
+  /// Consider errors as timeout?
+  pub errs_as_tmo: bool,
   /// Global conf.
   gconf: GConf,
 }
@@ -316,10 +389,12 @@ impl PlotConf {
   /// Creates a plot conf.
   #[inline]
   pub fn mk(
-    file: String, pdf: bool, then: Option<String>, gconf: GConf
+    file: String, pdf: bool, then: Option<String>,
+    fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
+    gconf: GConf
   ) -> Self {
     let file = file.path_subst() ;
-    PlotConf { file, pdf, then, gconf }
+    PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
   }
 }
 
@@ -575,6 +650,11 @@ impl Deref for BenchIndex {
 impl From<usize> for BenchIndex {
   fn from(n: usize) -> BenchIndex {
     BenchIndex { n }
+  }
+}
+impl fmt::Display for BenchIndex {
+  fn fmt(& self, fmt: & mut fmt::Formatter) -> fmt::Result {
+    write!(fmt, "{}", self.n)
   }
 }
 
