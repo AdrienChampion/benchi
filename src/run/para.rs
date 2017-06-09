@@ -63,7 +63,7 @@ pub fn bench_to_tool_channel() -> (
 }
 
 /// Output of a process.
-pub type Output = Option<ExitStatus> ;
+pub type Output = Option< (ExitStatus, Res<Option<ExitStatus>>) > ;
 
 /// Result of a run.
 #[derive(Debug)]

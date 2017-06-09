@@ -2,7 +2,8 @@
 
 # TODO
 
-- have timeout in header of data files (will break `plot`)
+- don't force order in parsing
+- clean `run/mod.rs`: introduce enum for run outcome
 */
 
 #![forbid(missing_docs)]

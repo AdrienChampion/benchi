@@ -19,8 +19,8 @@ pub struct ToolConfParsing {
   pub graph: Spnd<String>,
   /// Command (lines).
   pub cmd: Spnd< Vec<String> >,
-  // /// Optional validator.
-  // pub validator: ()
+  /// Optional validator.
+  pub validator: Option< Spnd<String> >,
 }
 impl ToolConfParsing {
   /// Translates to the normal `ToolConf` structure.
@@ -30,6 +30,7 @@ impl ToolConfParsing {
       short: self.short.xtract(),
       graph: self.graph.xtract(),
       cmd: self.cmd.xtract(),
+      validator: self.validator.map(|v| v.xtract()),
     }
   }
 }
@@ -66,6 +67,21 @@ fn spc_cmt(
 named!{
   opt_spc_cmt<usize>, map!(
     opt!( complete!(spc_cmt) ), |opt: Option<usize>| opt.unwrap_or(0)
+  )
+}
+
+/// Raw string parser.
+fn raw_string(bytes: & [u8], cnt: usize) -> IResult<& [u8], Spnd<String>> {
+  map!(
+    bytes,
+    map_res!(
+      do_parse!(
+        tag!("#\"") >>
+        raw: take_until_s!("\"#") >>
+        tag!("\"#") >> (raw)
+      ), |bytes| from_utf8(bytes).map(|s| (s, bytes.len()))
+    ),
+    |(s, len): (& str, usize)| Spnd::mk(s.to_string(), cnt, len + 4)
   )
 }
 
@@ -205,10 +221,22 @@ fn tool_conf<'a>(
       }
     ) >>
     map!( opt_spc_cmt, |add| len += add ) >>
+    validator: opt!(
+      do_parse!(
+        map!( tag!("validator"), |b: & 'a [u8]| len += b.len() ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        map!( char!(':'), |_| len += 1 ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        validator: apply!(raw_string, cnt + len) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        ({ len += validator.len() ; validator })
+      )
+    ) >>
+    map!( opt_spc_cmt, |add| len += add ) >>
     map!( char!('}'), |_| len += 1 ) >> ({
       let graph = graph.unwrap_or(name.clone()) ;
       (
-        ToolConfParsing { name, short, graph, cmd }, len
+        ToolConfParsing { name, short, graph, cmd, validator }, len
       )
     })
   )

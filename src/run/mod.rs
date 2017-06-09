@@ -151,8 +151,13 @@ impl ToolRun {
     if let Some(124) = status.code() {
       return Ok( (time, None) )
     } else {
+      let validation = self.instance.validate(
+        & self.conf, tool_idx, bench_idx, & status
+      ) ;
       return Ok(
-        ( time, Some(status) )
+        (
+          time, Some( ( status, validation ) )
+        )
       )
     }
   }
@@ -337,7 +342,7 @@ pub struct Master {
   pub avg_runtime: ToolVec<(Duration, u32)>
 }
 impl Master {
-  /// Creates (but does not run) a master.
+  /// Creates (but does not run) a master. Initializes everything.
   pub fn mk(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<Self> {
     let mut bench_runs = Vec::with_capacity(conf.bench_par) ;
     // Channel to `self` shared by all **tool runs**.
@@ -373,38 +378,15 @@ impl Master {
       Some(bar)
     } ;
 
-    let mut tool_files = ToolVec::with_capacity( instance.tool_len() ) ;
-    let mut avg_runtime = ToolVec::with_capacity( instance.tool_len() ) ;
-    
-    // Open output files.
-    for tool in instance.tools() {
-      avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
-      instance.mk_err_dir(& conf, tool)? ;
-      if conf.log_stdout {
-        instance.mk_out_dir(& conf, tool)?
-      } ;
-      let mut path = PathBuf::new() ;
-      path.push(& conf.out_dir) ;
-      path.push( format!("{}.data", instance[tool].short) ) ;
-      let mut tool_file = conf.open_file_writer(
-        path.as_path()
-      ).chain_err(
-        || format!(
-          "while creating file `{}`, data file for `{}`",
-          conf.sad(
-            path.to_str().expect("non-UTF8 path")
-          ),
-          conf.emph( & instance[tool].name )
-        )
-      ) ? ;
-      instance[tool].dump_info(& conf.timeout, & mut tool_file).chain_err(
-        || format!(
-          "while dumping info for tool `{}`",
-          conf.emph( & instance[tool].name )
-        )
-      ) ? ;
-      tool_files.push( tool_file )
-    }
+    let (tool_files, avg_runtime) = instance.init_tools(
+      & conf,
+      // Fold init for average runtime.
+      ToolVec::with_capacity( instance.tool_len() ),
+      // Fold function for average runtime.
+      | avg_runtime: & mut ToolVec<_>, _ | {
+        avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
+      }
+    ) ? ;
 
     Ok(
       Master {
@@ -508,7 +490,18 @@ impl Master {
     Ok(Instant::now() - start)
   }
 
+  /// Updates the average run time of a tool, iff it's below the timeout.
+  fn update_avg_runtime(& mut self, tool: ToolIndex, time: Duration) {
+    if time < self.conf.timeout {
+      let (ref mut avg, ref mut cnt) = self.avg_runtime[tool] ;
+      // Incremental average computation.
+      * cnt += 1 ;
+      * avg = (*avg * (*cnt - 1) + time) / *cnt
+    }
+  }
+
   /// Receives some results from the tool runs. Returns `true` if disconnected.
+  /// Non-blocking.
   fn recv_results(& mut self) -> Res<bool> {
     'recv: loop {
       match self.from_tool_runs.try_recv() {
@@ -521,41 +514,92 @@ impl Master {
             self.cleanup(tool)
           }
 
-          let (time, status) = res.chain_err(
+          let (time, res) = res.chain_err(
             || format!(
-              "while running {} on {}",
-              self.instance[tool].name,
-              self.conf.emph( self.instance.str_of_bench(bench) )
-            )
-          ) ? ;
-          let res = if time > self.conf.timeout {
-            self.timeouts += 1 ;
-            format!( "timeout({})", self.conf.timeout.as_sec_str() )
-          } else if ! status.map(|s| s.success()).unwrap_or(true) {
-            self.errors += 1 ;
-            "error".to_string()
-          } else {
-            let (ref mut avg, ref mut cnt) = self.avg_runtime[tool] ;
-            // Incremental average computation.
-            * cnt += 1 ;
-            * avg = (*avg * (*cnt - 1) + time) / *cnt ;
-            time.as_sec_str()
-          } ;
-          try!(
-            writeln!(
-              & mut self.tool_files[tool],
-              "{} \"{}\" {}",
-              self.instance.safe_name_for_bench(bench),
-              self.instance.str_of_bench(bench),
-              res
-            ).chain_err(
-              || format!(
-                "while writing result of {} running on {}",
-                self.conf.emph( & self.instance[tool].name ),
+              "while running `{}` on `{}`",
+              self.conf.bad(& self.instance[tool].name),
+              self.conf.emph(
                 self.conf.emph( self.instance.str_of_bench(bench) )
               )
             )
-          )
+          ) ? ;
+
+          let res = if let Some( (status, validation) ) = res {
+
+            let validation = match validation {
+              Ok(v) => v.map( |v| v.code() ),
+              Err(e) => {
+                print_err(& * self.conf, e, false) ;
+                println!("") ;
+                None
+              },
+            } ;
+
+            match validation {
+              Some( Some(code) ) => {
+                self.update_avg_runtime(tool, time) ;
+                if time > self.conf.timeout {
+                  self.timeouts += 1 ;
+                  format!(
+                    "timeout({}) {}", self.conf.timeout.as_sec_str(), code
+                  )
+                } else {
+                  format!("{} {}", time.as_sec_str(), code)
+                }
+              },
+              Some(None) => {
+                print_err(
+                  & * self.conf,
+                  format!(
+                    "could not retrieve exit status of validation \
+                    of `{}` for `{}`",
+                    self.conf.sad(& self.instance[tool].name),
+                    self.conf.emph( self.instance.str_of_bench(bench) )
+                  ).into(),
+                  false
+                ) ;
+                println!("") ;
+                self.update_avg_runtime(tool, time) ;
+                if time > self.conf.timeout {
+                  self.timeouts += 1 ;
+                  format!(
+                    "timeout({}) ?", self.conf.timeout.as_sec_str()
+                  )
+                } else {
+                  format!("{} ?", time.as_sec_str())
+                }
+              },
+              // Tool has no validator.
+              None => if ! status.success() {
+                self.errors += 1 ;
+                "error".to_string()
+              } else if time > self.conf.timeout {
+                self.timeouts += 1 ;
+                format!( "timeout({})", time.as_sec_str() )
+              } else {
+                self.update_avg_runtime(tool, time) ;
+                time.as_sec_str()
+              }
+            }
+
+          } else {
+            self.timeouts += 1 ;
+            format!( "timeout({})", self.conf.timeout.as_sec_str() )
+          } ;
+
+          writeln!(
+            & mut self.tool_files[tool],
+            "{} \"{}\" {}",
+            self.instance.safe_name_for_bench(bench),
+            self.instance.str_of_bench(bench),
+            res
+          ).chain_err(
+            || format!(
+              "while writing result of {} running on {}",
+              self.conf.emph( & self.instance[tool].name ),
+              self.conf.emph( self.instance.str_of_bench(bench) )
+            )
+          ) ?
         },
 
         Err( TryRecvError::Empty ) => {

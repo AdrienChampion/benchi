@@ -3,7 +3,7 @@
 use std::fmt ;
 use std::ops::{ Index, IndexMut, Deref } ;
 
-pub use std::process::Command ;
+pub use std::process::{ Command, ExitStatus } ;
 pub use std::fs::File ;
 pub use std::io::{ Lines, Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
@@ -304,7 +304,10 @@ pub trait GConfExt: ColorExt {
   fn gconf(& self) -> & GConf ;
   /// Opens a file in write mode. Creates parent directory if necessary.
   #[inline]
-  fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
+  fn open_file_writer_exe<P: AsRef<Path>>(
+    & self, path: P, executable: bool
+  ) -> Res<File> {
+    use std::os::unix::fs::OpenOptionsExt ;
     // Create parent directory if necessary.
     {
       let mut buf = path.as_ref().to_path_buf() ;
@@ -317,6 +320,9 @@ pub trait GConfExt: ColorExt {
     let conf = self.gconf() ;
     let mut options = ::std::fs::OpenOptions::new() ;
     options.write(true) ;
+    if executable {
+      options.mode(0o544) ;
+    }
     if conf.ow_files {
       options.create(true).truncate(true) ;
     } else {
@@ -334,6 +340,11 @@ pub trait GConfExt: ColorExt {
         _ => e.into(),
       }
     )
+  }
+  /// Opens a file in write mode. Creates parent directory if necessary.
+  #[inline]
+  fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
+    self.open_file_writer_exe(path, false)
   }
 }
 impl<T: GConfExt> ColorExt for T {
@@ -455,6 +466,20 @@ impl RunConf {
       gconf
     }
   }
+
+  /// Name of the validator for some benchmark.
+  #[inline]
+  pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
+    if tool.validator.is_none() {
+      None
+    } else {
+      let mut path = PathBuf::from(& self.out_dir) ;
+      path.push(& tool.short) ;
+      path.push("validator") ;
+      path.set_extension("sh") ;
+      Some(path)
+    }
+  }
 }
 
 
@@ -471,8 +496,8 @@ pub struct ToolConf {
   pub graph: String,
   /// Command (lines).
   pub cmd: Vec<String>,
-  // /// Optional validator.
-  // pub validator: ()
+  /// Optional validator.
+  pub validator: Option<String>,
 }
 unsafe impl Sync for ToolConf {}
 impl ToolConf {
@@ -582,7 +607,7 @@ impl ToolConf {
       bail!( format!("expected tool ({}) cmd, found nothing", name) )
     } ;
     
-    Ok( ToolConf { name, short, graph, cmd } )
+    Ok( ToolConf { name, short, graph, cmd, validator: None } )
   }
 }
 
@@ -799,11 +824,139 @@ impl Instance {
       )
     )
   }
+  /// Initializes the data file for some tool.
+  #[inline]
+  pub fn init_data_file(
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
+  ) -> Res<File> {
+    let mut path = PathBuf::new() ;
+    path.push(& conf.out_dir) ;
+    path.push(& self[tool].short) ;
+    path.set_extension("data") ;
+    let mut tool_file = conf.open_file_writer(
+      path.as_path()
+    ).chain_err(
+      || format!(
+        "while creating file `{}`, data file for `{}`",
+        conf.sad(
+          path.to_str().expect("non-UTF8 path")
+        ),
+        conf.emph( & self[tool].name )
+      )
+    ) ? ;
+    self[tool].dump_info(& conf.timeout, & mut tool_file).chain_err(
+      || format!(
+        "while dumping info for tool `{}`",
+        conf.emph( & self[tool].name )
+      )
+    ) ? ;
+    Ok(tool_file)
+  }
+  /// Initializes the validator for some tool.
+  #[inline]
+  pub fn init_validator(
+    & self, conf: & Arc<RunConf>, tool: ToolIndex
+  ) -> Res<()> {
+    use std::os::unix::fs::PermissionsExt ;
+    if let Some(path) = conf.validator_path_of( & self[tool] ) {
+      let mut file = conf.open_file_writer_exe(
+        path.as_path(), true
+      ).chain_err(
+        || format!(
+          "while creating validator for `{}`", conf.sad(& self[tool].name)
+        )
+      ) ? ;
+      file.write( ::consts::validator::pref.as_bytes() ).chain_err(
+        || format!(
+          "while while writing to validator file for `{}`",
+          conf.sad(& self[tool].name)
+        )
+      ) ? ;
+      if let Some(s) = self[tool].validator.as_ref() {
+        file.write( s.as_bytes() ).chain_err(
+          || format!(
+            "while while writing to validator file for `{}`",
+            conf.sad(& self[tool].name)
+          )
+        ) ? ;
+        file.metadata().chain_err(
+          || format!("could chmod validator file to executable")
+        ) ? .permissions().set_mode(0o744)
+      }
+    }
+    Ok(())
+  }
+
+  /// Initializes everything for the tools. Returns the data files for all the
+  /// tools. Runs the input function on each `ToolConf` in a fold manner.
+  ///
+  /// - tool dir, err dir, out dir
+  /// - data file
+  /// - validators if any
+  pub fn init_tools<T, F: Fn(& mut T, & ToolConf)>(
+    & self, conf: & Arc<RunConf>, init: T, fold_fun: F
+  ) -> Res< (ToolVec<File>, T) > {
+    let mut tool_files = ToolVec::with_capacity( self.tool_len() ) ;
+    let mut fold_data = init ;
+    // Tool init: output dirs, validators, data file, mastre data init.
+    for tool in self.tools() {
+      // Output dirs.
+      self.mk_err_dir(& conf, tool) ? ;
+      if conf.log_stdout {
+        self.mk_out_dir(& conf, tool) ?
+      } ;
+
+      // Data file.
+      let tool_file = self.init_data_file(& conf, tool) ? ;
+      tool_files.push( tool_file ) ;
+
+      // Validator.
+      self.init_validator(conf, tool) ? ;
+
+      // Folding.
+      fold_fun(& mut fold_data, & self[tool])
+    }
+
+    Ok((tool_files, fold_data))
+  }
 
   /// Checks if a bench index is the last one.
   #[inline]
   pub fn is_last_bench(& self, bench: BenchIndex) -> bool {
     * bench + 1 >= self.benchs.len()
+  }
+
+  /// If any, runs the validator for a tool on some benchmark.
+  pub fn validate(
+    & self, conf: & Arc<RunConf>,
+    tool: ToolIndex, bench: BenchIndex, status: & ExitStatus
+  ) -> Res< Option<ExitStatus> > {
+    if let Some(path) = conf.validator_path_of( & self[tool] ) {
+      use std::process::Stdio ;
+      let status = if let Some(code) = status.code() {
+        code
+      } else {
+        bail!("could not retrieve exit status")
+      } ;
+      let out_path = self.out_path_of(conf, tool, bench) ;
+      let err_path = self.err_path_of(conf, tool, bench) ;
+      Command::new(
+        path.as_os_str()
+      ).stdin(
+        Stdio::null()
+      ).stdout( Stdio::null() ).stderr( Stdio::null() ).arg(
+        & self[bench]
+      ).arg(
+        & format!("{}", status)
+      ).arg(out_path).arg(err_path).status().chain_err(
+        || format!(
+          "while running validator for `{}` on benchmark `{}`",
+          conf.sad(& self[tool].name), conf.sad(format!("{}", bench))
+        )
+      ).map(|s| Some(s))
+    } else {
+      Ok( None )
+    }
   }
 }
 impl Index<BenchIndex> for Instance {

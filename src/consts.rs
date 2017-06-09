@@ -5,6 +5,19 @@ static time_re: & str = "\
   ([0-9]*).([0-9]*)\
 " ;
 
+/// Validator constants.
+pub mod validator {
+  /// Prefix added to validator scripts.
+  pub static pref: & str = "\
+#!/bin/bash
+bench=\"$1\"
+code=\"$2\"
+out=\"$3\"
+err=\"$4\"
+\
+  " ;
+}
+
 /// Substitutions in user-provided data.
 pub mod subst {
   use regex::Regex ;
