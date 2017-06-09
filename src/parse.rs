@@ -76,12 +76,12 @@ fn raw_string(bytes: & [u8], cnt: usize) -> IResult<& [u8], Spnd<String>> {
     bytes,
     map_res!(
       do_parse!(
-        tag!("#\"") >>
-        raw: take_until_s!("\"#") >>
-        tag!("\"#") >> (raw)
+        tag!("```") >>
+        raw: take_until_s!("```") >>
+        tag!("```") >> (raw)
       ), |bytes| from_utf8(bytes).map(|s| (s, bytes.len()))
     ),
-    |(s, len): (& str, usize)| Spnd::mk(s.to_string(), cnt, len + 4)
+    |(s, len): (& str, usize)| Spnd::mk(s.to_string(), cnt, len + 6)
   )
 }
 
