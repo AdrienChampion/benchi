@@ -157,57 +157,35 @@ fn options<'a>(
   )
 }
 
-/// Parses a tool configuration.
-fn tool_conf<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult< & 'a [u8], (ToolConfParsing, usize) > {
+/// Parses a tool conf field.
+fn tool_conf_field<'a, 'b>(
+  bytes: & 'a [u8], builder: & 'b mut ToolConfBuilder, cnt: usize
+) -> IResult< & 'a [u8], Res<usize> > {
   let mut len = 0 ;
-  do_parse!(
+  map!(
     bytes,
-    name: map!(
-      apply!(string, cnt + len),
-      |name: Spnd<String>| {
-        len += name.len() ;
-        name
-      }
-    ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!('{'), |_| len += 1 ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( tag!("short"), |b: & 'a [u8]| len += b.len() ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!(':'), |_| len += 1 ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    short: map!(
-      apply!(ident, cnt + len),
-      |short: Spnd<String>| {
-        len += short.len() ;
-        short
-      }
-    ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    graph: opt!(
+    alt_complete!(
+
       do_parse!(
-        map!( tag!("graph"), |b: & 'a [u8]| len += b.len() ) >>
+        map!( tag!("short"), |b: & 'a [u8]| len = b.len() ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
         map!( char!(':'), |_| len += 1 ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
-        graph: apply!(string, cnt + len) >>
+        short: apply!(ident, cnt + len) >> ({
+          len += short.len() ;
+          builder.set_short( short.xtract() )
+        })
+      ) |
+
+      do_parse!(
+        map!( tag!("cmd"), |b: & 'a [u8]| len = b.len() ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
-        ({ len += graph.len() ; graph })
-      )
-    ) >>
-    map!( tag!("cmd"), |b: & 'a [u8]| len += b.len() ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!(':'), |_| len += 1 ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    cmd: map!(
-      apply!(quoted_string, cnt + len),
-      |cmd: Spnd< Vec<String> >| {
-        len += cmd.len() ;
-        cmd.map(
-          |vec| {
-            let mut iter = vec.into_iter() ;
+        map!( char!(':'), |_| len += 1 ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        cmd: apply!(quoted_string, cnt + len) >> ({
+          len += cmd.len() ;
+          let cmd = {
+            let mut iter = cmd.xtract().into_iter() ;
             if let Some(mut s) = iter.next() {
               for next in iter {
                 s = format!("{} {}", s, next)
@@ -216,29 +194,69 @@ fn tool_conf<'a>(
             } else {
               vec![]
             }
-          }
+          } ;
+          builder.set_cmd(cmd)
+        })
+      ) |
+
+      do_parse!(
+        map!( tag!("graph"), |b: & 'a [u8]| len = b.len() ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        map!( char!(':'), |_| len += 1 ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        graph: apply!(string, cnt + len) >> ({
+          len += graph.len() ;
+          builder.set_graph( graph.xtract() )
+        })
+      ) |
+
+      do_parse!(
+        map!( tag!("validator"), |b: & 'a [u8]| len = b.len() ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        map!( char!(':'), |_| len += 1 ) >>
+        map!( opt_spc_cmt, |add| len += add ) >>
+        validator: apply!(raw_string, cnt + len) >> ({
+          len += validator.len() ;
+          builder.set_validator( validator.xtract() )
+        })
+      )
+
+    ),
+    |res: Res<()>| res.map(|()| len)
+  )
+}
+
+/// Parses a tool configuration.
+fn tool_conf<'a>(
+  bytes: & 'a [u8], cnt: usize
+) -> IResult< & 'a [u8], (Res<ToolConf>, usize) > {
+  let mut len = 0 ;
+  let mut builder = None ;
+  do_parse!(
+    bytes,
+    map!(
+      apply!(string, cnt + len),
+      |name: Spnd<String>| {
+        len += name.len() ;
+        builder = Some(
+          ToolConfBuilder::of_name( name.xtract() )
         )
       }
     ) >>
     map!( opt_spc_cmt, |add| len += add ) >>
-    validator: opt!(
-      do_parse!(
-        map!( tag!("validator"), |b: & 'a [u8]| len += b.len() ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        map!( char!(':'), |_| len += 1 ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        validator: apply!(raw_string, cnt + len) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        ({ len += validator.len() ; validator })
+    map!( char!('{'), |_| len += 1 ) >>
+    map!( opt_spc_cmt, |add| len += add ) >>
+    many0!(
+      terminated!(
+        apply!(
+          tool_conf_field, builder.as_mut().unwrap(), cnt + len
+        ),
+        map!( opt_spc_cmt, |add| len += add )
       )
     ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!('}'), |_| len += 1 ) >> ({
-      let graph = graph.unwrap_or(name.clone()) ;
-      (
-        ToolConfParsing { name, short, graph, cmd, validator }, len
-      )
-    })
+    map!( char!('}'), |_| len += 1 ) >> (
+      (builder.unwrap().to_conf(), len)
+    )
   )
 }
 
@@ -246,7 +264,7 @@ fn tool_conf<'a>(
 fn tool_confs<'a>(
   bytes: & 'a [u8]
 ) -> IResult<
-  & 'a [u8], ( Vec<String>, Vec<ToolConfParsing> )
+  & 'a [u8], ( Vec<String>, Vec<Res<ToolConf>> )
 > {
   let mut cnt = 0 ;
   do_parse!(
@@ -260,18 +278,15 @@ fn tool_confs<'a>(
     ) >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
-      do_parse!(
-        tool: map!(
+      map!(
+        terminated!(
           apply!(tool_conf, cnt),
-          |(tool, len)| { cnt += len ; tool }
-        ) >>
-        map!( opt_spc_cmt, |add| cnt += add ) >> (
-          tool
-        )
+          map!( opt_spc_cmt, |add| cnt += add )
+        ), |(tool, len)| { cnt += len ; tool }
       )
-    ) >> ( (
-      opts.map(|o| o.xtract()).unwrap_or(vec![]), vec
-    ) )
+    ) >> (
+      ( opts.map(|o| o.xtract()).unwrap_or(vec![]), vec )
+    )
   )
 }
 
@@ -284,22 +299,17 @@ lazy_static!{
 
 /// Parses tool configurations from some bytes.
 pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
-  ( Vec<String>, Vec< ToolConfParsing > )
+  ( Vec<String>, Vec< ToolConf > )
 > {
   match tool_confs(bytes) {
-    IResult::Done(rest, (opts, mut tools)) => {
+    IResult::Done(rest, (opts, tools)) => {
       if rest.is_empty() {
-        for tool_conf in tools.iter_mut() {
-          if tool_conf.cmd.is_empty() {
-            bail!(
-              format!(
-                "command for tool {} is empty", conf.emph(& tool_conf.name)
-              )
-            )
-          }
+        let mut tool_confs = Vec::with_capacity(tools.len()) ;
+        for tool in tools.into_iter() {
+          let mut tool_conf = tool ? ;
           let cmd = {
             let mut cmd = vec![] ;
-            assert_eq!(tool_conf.cmd.get().len(), 1) ;
+            assert_eq!(tool_conf.cmd.len(), 1) ;
             let str_cmd = & tool_conf.cmd[0] ;
             let mut iter = cmd_regex.find_iter(str_cmd) ;
             if let Some(first) = iter.next() {
@@ -316,9 +326,10 @@ pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
             }
             cmd
           } ;
-          tool_conf.cmd.replace(cmd)
+          tool_conf.cmd = cmd ;
+          tool_confs.push(tool_conf)
         }
-        Ok( (opts, tools) )
+        Ok( (opts, tool_confs) )
       } else {
         bail!("conf file parse error: could not parse whole file")
       }

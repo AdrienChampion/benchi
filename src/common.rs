@@ -484,6 +484,96 @@ impl RunConf {
 
 
 
+/// Tool configuration builder.
+#[derive(Clone, Debug)]
+pub struct ToolConfBuilder {
+  name: String,
+  short: Option<String>,
+  graph: Option<String>,
+  cmd: Option< Vec<String> >,
+  validator: Option<String>,
+}
+impl ToolConfBuilder {
+  /// Builder from a name.
+  pub fn of_name(name: String) -> Self {
+    ToolConfBuilder {
+      name, short: None, graph: None, cmd: None, validator: None
+    }
+  }
+  /// Sets the short name.
+  pub fn set_short(& mut self, short: String) -> Res<()> {
+    if let Some(ref old) = self.short {
+      bail!(
+        format!(
+          "trying to set the short name for {} twice: `{}` and `{}`",
+          self.name, old, short
+        )
+      )
+    } else {
+      self.short = Some(short) ;
+      Ok(())
+    }
+  }
+  /// Sets the graph name.
+  pub fn set_graph(& mut self, graph: String) -> Res<()> {
+    if let Some(ref old) = self.graph {
+      bail!(
+        format!(
+          "trying to set the graph name for {} twice: `{}` and `{}`",
+          self.name, old, graph
+        )
+      )
+    } else {
+      self.graph = Some(graph) ;
+      Ok(())
+    }
+  }
+  /// Sets the command name.
+  pub fn set_cmd(& mut self, cmd: Vec<String>) -> Res<()> {
+    if let Some(_) = self.cmd {
+      bail!(
+        format!(
+          "trying to set the command for {} twice", self.name
+        )
+      )
+    } else {
+      self.cmd = Some(cmd) ;
+      Ok(())
+    }
+  }
+  /// Sets the validator name.
+  pub fn set_validator(& mut self, validator: String) -> Res<()> {
+    if let Some(_) = self.validator {
+      bail!(
+        format!(
+          "trying to set the validator for {} twice", self.name
+        )
+      )
+    } else {
+      self.validator = Some(validator) ;
+      Ok(())
+    }
+  }
+
+  /// Extracts a tool configuration.
+  pub fn to_conf(self) -> Res<ToolConf> {
+    let name = self.name ;
+    let short = self.short.ok_or_else::<Error, _>(
+      || format!("no short name given for `{}`", name).into()
+    ) ? ;
+    let graph = if let Some(graph) = self.graph { graph } else {
+      name.clone()
+    } ;
+    let cmd = self.cmd.ok_or_else::<Error, _>(
+      || format!("no command given for `{}`", name).into()
+    ) ? ;
+    let validator = self.validator ;
+    Ok(
+      ToolConf { name, short, graph, cmd, validator }
+    )
+  }
+}
+
 
 /// A tool configuration.
 #[derive(Clone, Debug)]

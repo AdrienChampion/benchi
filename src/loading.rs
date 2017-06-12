@@ -48,12 +48,11 @@ impl Data {
     }
   }
 
-  /// Ternary map (?).
+  /// Map over the different types of data.
   pub fn map<
     T,
     FSucc: FnOnce(Duration, Option<Validation>) -> T,
-    FTmo: FnOnce() -> T,
-    FErr: FnOnce() -> T,
+    FTmo: FnOnce() -> T, FErr: FnOnce() -> T,
   >(& self, f_succ: FSucc, f_tmo: FTmo, f_err: FErr) -> T {
     match * self {
       Data::Success(time, vald) => f_succ(time, vald),

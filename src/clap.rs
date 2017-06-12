@@ -144,13 +144,13 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
     while let Some(tool_a) = tool_iter.next() {
       let other_tools = tool_iter.clone() ;
       for tool_b in other_tools {
-        if tool_a.name.get() == tool_b.name.get() {
+        if tool_a.name == tool_b.name {
           bail!(
             "two of the tools have the same name `{}`",
             conf.bad(& tool_a.name),
           )
         }
-        if tool_a.short.get() == tool_b.short.get() {
+        if tool_a.short == tool_b.short {
           bail!(
             "tools `{}` and `{}` have the same short name `{}`",
             conf.emph(& tool_a.name),
@@ -158,7 +158,7 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
             conf.bad(& tool_a.short),
           )
         }
-        if tool_a.graph.get() == tool_b.graph.get() {
+        if tool_a.graph == tool_b.graph {
           bail!(
             "tools `{}` and `{}` have the same graph name `{}`",
             conf.emph(& tool_a.name),
@@ -203,10 +203,6 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
       e.exit()
     },
   } ;
-
-  let tool_confs: Vec<_> = tool_confs.into_iter().map(
-    |tool| tool.to_tool_conf()
-  ).collect() ;
 
   Ok( (tool_confs, matches) )
 }

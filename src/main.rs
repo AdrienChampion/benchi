@@ -2,7 +2,6 @@
 
 # TODO
 
-- don't force order in parsing
 - clean `run/mod.rs`: introduce enum for run outcome
 */
 
