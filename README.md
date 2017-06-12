@@ -1,5 +1,7 @@
 `benchi` is a benchmarking tool. It can inspect the results of a run to generate [neat, paper-ready comparative graphs](#gallery) and other various metrics.
 
+[![Build Status](https://travis-ci.org/AdrienChampion/benchi.svg?branch=master)](https://travis-ci.org/AdrienChampion/benchi)
+
 
 
 # Features
