@@ -354,6 +354,75 @@ impl<T: GConfExt> VerbExt for T {
   fn verb(& self) -> & Verb { & self.gconf().verb }
 }
 
+
+/// Validation code info.
+#[derive(Debug, Clone)]
+pub struct ValdCode {
+  /// Alias.
+  pub alias: String,
+  /// Description.
+  pub desc: String,
+  /// Color (optional).
+  pub color: Option<String>,
+}
+
+/// Validator configuration.
+#[derive(Debug, Clone)]
+pub struct ValdConf {
+  /// Success codes.
+  succ: HashMap<i32, ValdCode>,
+}
+impl ValdConf {
+  /// Creates an empty validator configuration.
+  pub fn empty() -> Self {
+    ValdConf { succ: HashMap::new() }
+  }
+
+  /// Adds a new success validation code.
+  pub fn add_succ(mut self, code: i32, info: ValdCode) -> Res<Self> {
+    if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {
+      Err(
+        format!(
+          "code `{}` is already registered as success `{}`", code, desc
+        ).into()
+      )
+    } else {
+      Ok(self)
+    }
+  }
+}
+/// Validator configuration extensions.
+pub trait ValdConfExt {
+  /// Accessor.
+  fn vald_conf(& self) -> & ValdConf ;
+
+  /// Checks whether an exit status is a success.
+  ///
+  /// Returns true if no success code is registered and `status.success()`, or
+  /// the status is `Some(code)` and `code` is registered as a success.
+  fn check_succ(& self, status: & ExitStatus) -> bool {
+    let vald_conf = self.vald_conf() ;
+    if vald_conf.succ.is_empty() {
+      status.success()
+    } else if let Some(code) = status.code() {
+      vald_conf.succ.get(& code).is_some()
+    } else {
+      false
+    }
+  }
+
+  /// Iterator over the success codes declared.
+  fn validators_iter(& self) -> ::std::collections::hash_map::Iter<
+    i32, ValdCode
+  > {
+    self.vald_conf().succ.iter()
+  }
+}
+impl ValdConfExt for ValdConf {
+  fn vald_conf(& self) -> & ValdConf { self }
+}
+
+
 /// Global configuration.
 #[derive(Debug, Default, Clone)]
 pub struct GConf {
@@ -432,23 +501,14 @@ pub struct RunConf {
   pub log_stdout: bool,
   /// Global configuration.
   gconf: GConf,
+  /// Validator Conf.
+  vald_conf: ValdConf,
 }
 impl GConfExt for RunConf {
   fn gconf(& self) -> & GConf { & self.gconf }
 }
-impl Default for RunConf {
-  fn default() -> Self {
-    RunConf {
-      bench_par: 1, tool_par: 1,
-      timeout: Duration::new(60, 0),
-      try: None,
-      log_stdout: true,
-      out_dir: ".".into(),
-      tool_file: "tools.conf".into(),
-      bench_file: "bench.file".into(),
-      gconf: GConf::default(),
-    }
-  }
+impl ValdConfExt for RunConf {
+  fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
 }
 impl RunConf {
   /// Creates a configuration.
@@ -457,13 +517,13 @@ impl RunConf {
     bench_par: usize, tool_par: usize,
     timeout: Duration, try: Option<usize>, log_stdout: bool,
     out_dir: String, tool_file: String, bench_file: String,
-    gconf: GConf,
+    gconf: GConf, vald_conf: ValdConf
   ) -> Self {
     let out_dir = out_dir.path_subst() ;
     RunConf {
       bench_par, tool_par, timeout, try, log_stdout,
       out_dir, tool_file, bench_file,
-      gconf
+      gconf, vald_conf
     }
   }
 
@@ -962,6 +1022,16 @@ impl Instance {
           conf.sad(& self[tool].name)
         )
       ) ? ;
+      for (code, info) in conf.validators_iter() {
+        file.write(
+          format!("# {}\n{}=\"{}\"\n", info.desc, info.alias, code).as_bytes()
+        ).chain_err(
+          || format!(
+            "while while writing to validator file for `{}`",
+            conf.sad(& self[tool].name)
+          )
+        ) ? ;
+      }
       if let Some(s) = self[tool].validator.as_ref() {
         file.write( s.as_bytes() ).chain_err(
           || format!(
@@ -1253,6 +1323,21 @@ impl StrExt for str {
 impl StrExt for String {
   fn subst(& self, regex: & ::regex::Regex, something: & str) -> String {
     (self as & str).subst(regex, something)
+  }
+}
+
+
+
+/// Extension for `ExitStatus`.
+pub trait ExitStatusExt {
+  /// Data string version of the code. `?` if none.
+  fn as_data_str(& self) -> String ;
+}
+impl ExitStatusExt for ExitStatus {
+  fn as_data_str(& self) -> String {
+    if let Some(code) = self.code() {
+      format!("{}", code)
+    } else { "?".into() }
   }
 }
 

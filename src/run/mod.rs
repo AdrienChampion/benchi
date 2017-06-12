@@ -13,8 +13,8 @@ tool to run to `ToolRun`s.
 use common::* ;
 use errors::* ;
 
-pub mod para ;
-use self::para::* ;
+pub mod utils ;
+use self::utils::* ;
 
 /// Lowest level in the hierarchy, runs a tool on a benchmark.
 pub struct ToolRun {
@@ -25,7 +25,7 @@ pub struct ToolRun {
   /// Index of this tool run for the bench run responsible for it.
   index: usize,
   /// Sender to master.
-  master: Sender< RunRes<(Duration, Output)> >,
+  master: Sender<RunRes>,
   /// Sender to bench run.
   bench_run: Sender< usize >,
   /// Receiver from bench run.
@@ -37,7 +37,7 @@ impl ToolRun {
   #[inline]
   fn mk(
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
-    master: Sender< RunRes<(Duration, Output)> >,
+    master: Sender<RunRes>,
     bench_run: Sender< usize >,
     from_bench_run: Receiver< (ToolIndex, BenchIndex) >,
   ) -> Self {
@@ -61,25 +61,10 @@ impl ToolRun {
       match self.from_bench_run.recv() {
         Ok( (tool, bench) ) => {
           // Work...
-          let res = self.run(tool, bench) ;
-          // if let Ok(ref res) = res {
-          //   println!(
-          //     "{} on {} ({})\n  {}\n  {}.{:0>9}",
-          //     self.instance[tool].name,
-          //     self.instance.str_of_bench(bench),
-          //     {
-          //       let mut cmd = self.instance[tool].cmd[0].to_string() ;
-          //       for s in & self.instance[tool].cmd[1..] {
-          //         cmd.push(' ') ;
-          //         cmd.push_str(s)
-          //       }
-          //       cmd
-          //     },
-          //     res.0.as_sec_str(),
-          //     res.0.as_secs(),
-          //     res.0.subsec_nanos(),
-          //   )
-          // }
+          let res = match self.run(tool, bench) {
+            Ok(res) => res,
+            Err(e) => BenchRes::BenchiError(e),
+          } ;
           // Delete error file if empty.
           let path = self.instance.err_path_of(
             & self.conf, tool, bench
@@ -90,7 +75,9 @@ impl ToolRun {
             }
           }
           // Send to master.
-          if let Err(_) = self.master.send( RunRes { tool, bench, res } ) {
+          if let Err(_) = self.master.send(
+            RunRes { tool, bench, res }
+          ) {
             // Disconnected, should not happen.
             break 'work
           }
@@ -105,7 +92,7 @@ impl ToolRun {
   /// Runs a tool on a bench.
   fn run(
     & self, tool_idx: ToolIndex, bench_idx: BenchIndex
-  ) -> Res< (Duration, Output) > {
+  ) -> Res<BenchRes> {
     let bench = & self.instance[bench_idx] ;
     let kid_cmd = & self.instance[tool_idx].cmd ;
 
@@ -133,33 +120,34 @@ impl ToolRun {
     set_pipes(& mut cmd, stdout_file, stderr_file) ;
 
     let (mut kid, start) = (
-      try!(
-        cmd.spawn().chain_err(
-          || format!("while running command `{}`", cmd_str)
-        )
-      ),
-      Instant::now()
+      cmd.spawn().chain_err(
+        || format!("while running command `{}`", cmd_str)
+      ) ?, Instant::now()
     ) ;
 
-    let status = try!(
-      kid.wait().chain_err(
-        || format!("while waiting for `{}`", cmd_str)
-      )
-    ) ;
+    let status = kid.wait().chain_err(
+      || format!("while waiting for `{}`", cmd_str)
+    ) ? ;
     let time = Instant::now() - start ;
 
-    if time >= self.conf.timeout ||
-      Some(124) == status.code() ||
-      Some(137) == status.code()
-    {
-      return Ok( (time, None) )
+    if time >= self.conf.timeout
+    || Some(124) == status.code()
+    || Some(137) == status.code() {
+      Ok( BenchRes::Timeout(status) )
     } else {
-      let validation = self.instance.validate(
+      let status = if let Some(vald_status) = self.instance.validate(
         & self.conf, tool_idx, bench_idx, & status
-      ) ;
-      return Ok(
-        ( time, Some( ( status, validation ) ) )
-      )
+      ) ? {
+        vald_status
+      } else {
+        status
+      } ;
+
+      if self.conf.check_succ(& status) {
+        Ok( BenchRes::Success(time, status) )
+      } else {
+        Ok( BenchRes::Error(status) )
+      }
     }
   }
 
@@ -225,7 +213,7 @@ impl BenchRun {
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender< Res<usize> >,
     from_master: Receiver< BenchIndex >,
-    tool_to_master: Sender< RunRes<(Duration, Output)> >,
+    tool_to_master: Sender<RunRes>,
   ) -> Self {
     let mut tool_runs = Vec::with_capacity( conf.tool_par ) ;
     // Channel to `self`, shared by all tool runs.
@@ -328,7 +316,7 @@ pub struct Master {
   /// Receiver from bench runs (intermediary level).
   from_bench_runs: Receiver< Res<usize> >,
   /// Receiver from tool runs (lowest level).
-  from_tool_runs: Receiver< RunRes<(Duration, Output)> >,
+  from_tool_runs: Receiver<RunRes>,
   /// Files in write mode to write the results to.
   tool_files: ToolVec<File>,
   /// Progress bar.
@@ -515,73 +503,35 @@ impl Master {
             self.cleanup(tool)
           }
 
-          let (time, res) = res.chain_err(
-            || format!(
-              "while running `{}` on `{}`",
-              self.conf.bad(& self.instance[tool].name),
-              self.conf.emph(
-                self.conf.emph( self.instance.str_of_bench(bench) )
-              )
-            )
-          ) ? ;
+          let data_line_end = match res {
 
-          let res = if let Some( (status, validation) ) = res {
+            BenchRes::Success(time, status) => {
+              self.update_avg_runtime(tool, time) ;
+              format!( "{} {}", time.as_sec_str(), status.as_data_str() )
+            },
 
-            let validation = match validation {
-              Ok(v) => v.map( |v| v.code() ),
-              Err(e) => {
-                print_err(& * self.conf, e, false) ;
-                println!("") ;
-                None
-              },
-            } ;
+            BenchRes::Timeout(status) => {
+              self.timeouts += 1 ;
+              format!( "timeout {}", status.as_data_str() )
+            },
 
-            match validation {
-              Some( Some(code) ) => {
-                self.update_avg_runtime(tool, time) ;
-                if time > self.conf.timeout {
-                  self.timeouts += 1 ;
-                  format!("timeout {}", code)
-                } else {
-                  format!("{} {}", time.as_sec_str(), code)
-                }
-              },
-              Some(None) => {
-                print_err(
-                  & * self.conf,
-                  format!(
-                    "could not retrieve exit status of validation \
-                    of `{}` for `{}`",
-                    self.conf.sad(& self.instance[tool].name),
-                    self.conf.emph( self.instance.str_of_bench(bench) )
-                  ).into(),
-                  false
-                ) ;
-                println!("") ;
-                self.update_avg_runtime(tool, time) ;
-                if time > self.conf.timeout {
-                  self.timeouts += 1 ;
-                  "timeout ?".into()
-                } else {
-                  format!("{} ?", time.as_sec_str())
-                }
-              },
-              // Tool has no validator.
-              None => if ! status.success() {
-                self.errors += 1 ;
-                "error".to_string()
-              } else if time > self.conf.timeout {
-                self.timeouts += 1 ;
-                "timeout".into()
-              } else {
-                self.update_avg_runtime(tool, time) ;
-                time.as_sec_str()
+            BenchRes::Error(status) => {
+              self.errors += 1 ;
+              format!( "error {}", status.as_data_str() )
+            },
+
+            BenchRes::BenchiError(e) => {
+              if let Err(e) = (Err(e) as Res<()>).chain_err(
+                || format!(
+                  "internal error while running `{}` on `{}`",
+                  self.conf.sad(& self.instance[tool].name),
+                  self.conf.sad( self.instance.str_of_bench(bench) )
+                )
+              ) {
+                print_err(& * self.conf, e, false)
               }
-            }
-
-          } else {
-            self.timeouts += 1 ;
-            "timeout".into()
+              continue 'recv
+            },
           } ;
 
           writeln!(
@@ -589,7 +539,7 @@ impl Master {
             "{} \"{}\" {}",
             self.instance.safe_name_for_bench(bench),
             self.instance.str_of_bench(bench),
-            res
+            data_line_end
           ).chain_err(
             || format!(
               "while writing result of {} running on {}",

@@ -18,7 +18,7 @@ fn tmo_err(got: & str) -> Error {
 static tmo_format: & str = "[int]s|[int]min" ;
 lazy_static!{
   static ref tmo_regex: Regex = Regex::new(
-    r"^(\d*)(min|s)$"
+    r"^(?P<value>\d*)(?P<unit>min|s)$"
   ).unwrap() ;
 }
 
@@ -27,39 +27,35 @@ fn tmo_of_str(s: & str) -> Res<Duration> {
   if let Some(caps) = tmo_regex.captures(s) {
     debug_assert_eq!{ caps.len(), 3 }
 
-    caps.get(1).ok_or(
-      tmo_err(& s)
-    ).and_then(
-      |to| u64::from_str(
-        to.as_str()
-      ).map_err(
-        |e| clap_err(
+    let value = if let Ok(value) = u64::from_str(
+      & caps["value"]
+    ) { value } else {
+      bail!(
+        clap_err(
           "timeout argument",
-          format!("expected integer, got `{}` ({})", to.as_str(), e)
+          format!("expected integer, got `{}`", & caps["value"])
         )
       )
-    ).and_then(
-      |num| {
-        caps.get(2).ok_or(
-          tmo_err(& s)
-        ).and_then(
-          |unit| match unit.as_str() {
-            "min" => Ok(
-              Duration::new(60 * num, 0)
-            ),
-            "s" => Ok(
-              Duration::new(num, 0)
-            ),
-            s => Err(
-              clap_err(
-                "timeout argument",
-                format!("expected `min` or `s`, got `{}`", s)
-              )
-            ),
-          }
+    } ;
+
+    let coef = match & caps["unit"] {
+      "s" => 1,
+      "min" => 60,
+      "" => bail!(
+        clap_err(
+          "timeout argument",
+          format!("missing time unit `s` or `min`")
         )
-      }
-    )
+      ),
+      s => bail!(
+        clap_err(
+          "timeout argument",
+          format!("expected time unit `s` or `min`, got `{}`", s)
+        )
+      ),
+    } ;
+
+    Ok( Duration::new(coef * value, 0) )
   } else {
     bail!(
       tmo_err("timeout argument", )
@@ -67,7 +63,7 @@ fn tmo_of_str(s: & str) -> Res<Duration> {
   }
 }
 
-// Timeout validator.
+/// Timeout validator.
 fn tmo_validator(s: String) -> Result<(), String> {
   if let Ok(_) = tmo_of_str(& s) {
     Ok(())
@@ -122,7 +118,7 @@ macro_rules! while_opening {
 
 /// Loads the tool file.
 fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
-  ( Vec<ToolConf>, ArgMatches<'static> )
+  ( ValdConf, Vec<ToolConf>, ArgMatches<'static> )
 > {
   use std::io::Read ;
 
@@ -134,7 +130,7 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
     file.read_to_end(& mut buff).chain_err( while_opening!(conf, tool_file) )
   ) ;
 
-  let (options, tool_confs) = try!(
+  let (options, vald_conf, tool_confs) = try!(
     ::parse::work(& GConf::default(), & buff)
   ) ;
 
@@ -204,7 +200,7 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
     },
   } ;
 
-  Ok( (tool_confs, matches) )
+  Ok( (vald_conf, tool_confs, matches) )
 }
 
 
@@ -229,14 +225,14 @@ pub fn work() -> Res< Clap > {
     let tool_file = run_matches.value_of("CONF").expect(
       "unreachable(CONF): required"
     ).to_string() ;
-    let (tools, file_matches) = try!(
+    let (vald_conf, tools, file_matches) = try!(
       load_conf(& conf, tool_file)
     ) ;
     let matches = Matches {
       primary: & matches, secondary: Some(& file_matches)
     } ;
     let conf = matches.clap_main() ;
-    return Ok( Clap::Run(matches.clap_run(conf)?, tools) )
+    return Ok( Clap::Run(matches.clap_run(conf, vald_conf)?, tools) )
   }
 
   if let Some(plot_matches) = matches.subcommand_matches("plot") {
@@ -735,7 +731,7 @@ impl<'a> Matches<'a> {
   }
 
   // Run options, except the tool file.
-  fn clap_run(& self, conf: GConf) -> Res<RunConf> {
+  fn clap_run(& self, conf: GConf, vald_conf: ValdConf) -> Res<RunConf> {
 
     // Output directory.
     let out_dir = self.sub_value_of("run", "out_dir").expect(
@@ -799,8 +795,40 @@ impl<'a> Matches<'a> {
       RunConf::mk(
         bench_par, tool_par, timeout, try, log_stdout,
         out_dir, tool_file, bench_file,
-        conf
+        conf, vald_conf
       )
     )
   }
+}
+
+
+
+
+
+
+#[test]
+fn clap_tmo() {
+  fn test(secs: u64, string: & str) {
+    let exp = Duration::new(secs, 0) ;
+    println!("`{}` should be parsed as {}", string, exp.as_sec_str()) ;
+    assert!( tmo_validator(string.into()).is_ok() ) ;
+    assert_eq!( exp, tmo_of_str(string).unwrap() )
+  }
+
+  test(10, "10s") ;
+  test(42, "42s") ;
+  test(42 * 60, "42min") ;
+
+  assert!( tmo_of_str("").is_err() ) ;
+  assert!( tmo_validator( "".into() ).is_err() ) ;
+  assert!( tmo_of_str("7").is_err() ) ;
+  assert!( tmo_validator( "7".into() ).is_err() ) ;
+  assert!( tmo_of_str("s").is_err() ) ;
+  assert!( tmo_validator( "s".into() ).is_err() ) ;
+  assert!( tmo_of_str("min").is_err() ) ;
+  assert!( tmo_validator( "min".into() ).is_err() ) ;
+  assert!( tmo_of_str("b42s").is_err() ) ;
+  assert!( tmo_validator( "b42s".into() ).is_err() ) ;
+  assert!( tmo_of_str("42 min").is_err() ) ;
+  assert!( tmo_validator( "42 min".into() ).is_err() ) ;
 }

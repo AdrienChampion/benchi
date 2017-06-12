@@ -1,4 +1,4 @@
-/*! Parallel framework for runners.
+/*! Utils for running benchmarks.
 
 Note that `ToolRun`s communicate the results directly to the master. All they
 send to `BenchRun`s is that they're done.
@@ -14,7 +14,6 @@ pub use std::sync::mpsc::{
 } ;
 
 /// Sets the pipes for a command.
-#[cfg(not(windows))]
 pub fn set_pipes(
   cmd: & mut Command, out_file: Option<File>, err_file: File
 ) {
@@ -28,23 +27,6 @@ pub fn set_pipes(
   let err = unsafe { Stdio::from_raw_fd(err_file.into_raw_fd()) } ;
   cmd.stderr(err) ;
   cmd.stdin( Stdio::null() ) ;
-}
-
-
-/// Kills a process from its pid.
-#[cfg(not(windows))]
-pub fn kill_process(pid: u32) {
-  let _ = Command::new("kill").arg("-s").arg("9").arg(
-    format!("-{}", pid)
-  ).output() ;
-}
-
-/// Kills a process from its pid.
-#[cfg(windows)]
-pub fn kill_process(pid: u32) {
-  let _ = Command::new("taskkill").arg("/t").arg("/pid").arg(
-    format!("{}", pid)
-  ).output() ;
 }
 
 
@@ -62,22 +44,32 @@ pub fn bench_to_tool_channel() -> (
   channel()
 }
 
-/// Output of a process.
-pub type Output = Option< (ExitStatus, Res<Option<ExitStatus>>) > ;
+/// Different things a benchmark run can yield.
+#[derive(Debug)]
+pub enum BenchRes {
+  /// Runtime was longer than timeout.
+  Timeout(ExitStatus),
+  /// Successful.
+  Success(Duration, ExitStatus),
+  /// Error.
+  Error(ExitStatus),
+  /// Error in `benchi`.
+  BenchiError(Error),
+}
 
 /// Result of a run.
 #[derive(Debug)]
-pub struct RunRes<T> {
+pub struct RunRes {
   /// Tool index.
   pub tool: ToolIndex,
   /// Bench index.
   pub bench: BenchIndex,
   /// Result.
-  pub res: Res<T>,
+  pub res: BenchRes,
 }
 /// Channel from tool runs to master.
-pub fn tool_to_master_channel<T>() -> (
-  Sender< RunRes<T> >, Receiver< RunRes<T> >
+pub fn tool_to_master_channel() -> (
+  Sender<RunRes>, Receiver<RunRes>
 ) {
   channel()
 }

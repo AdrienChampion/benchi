@@ -157,6 +157,77 @@ fn options<'a>(
   )
 }
 
+/// Parses a signed integer.
+named!{
+  signed_int< Res<i32> >, do_parse!(
+    sign: opt!( char!('-') ) >>
+    opt_spc_cmt >>
+    num: re_bytes_find!( r"^[0-9][0-9]*" ) >> (
+      from_utf8(num).chain_err(
+        || format!("non utf8 string during signed int parsing")
+      ).and_then(
+        |num| {
+          use ::std::str::FromStr ;
+          i32::from_str(num).chain_err(
+            || format!("expected integer, found `{}`", num)
+          )
+        }
+      ).map(
+        |num| if sign.is_none() { num } else { - num }
+      )
+    )
+  )
+}
+
+
+/// Parses a validator conf.
+fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
+  let mut vald_conf = Ok( ValdConf::empty() ) ;
+  map!(
+    bytes,
+    opt!(
+      do_parse!(
+        tag!("validators") >>
+        opt_spc_cmt >>
+        char!('{') >>
+        opt_spc_cmt >>
+        many0!(
+          do_parse!(
+            tag!("success") >>
+            opt_spc_cmt >>
+            char!(':') >>
+            opt_spc_cmt >>
+            code: signed_int >>
+            opt_spc_cmt >>
+            char!(',') >>
+            opt_spc_cmt >>
+            alias: map!( apply!(ident, 0), |s: Spnd<String>| s.xtract()) >>
+            opt_spc_cmt >>
+            char!(',') >>
+            opt_spc_cmt >>
+            desc: map!( apply!(string, 0), |s: Spnd<String>| s.xtract()) >>
+            opt_spc_cmt >> (
+              match code {
+                Ok(code) => {
+                  vald_conf = vald_conf.and_then(
+                    |conf| conf.add_succ(
+                      code, ValdCode { alias, desc, color: None }
+                    )
+                  )
+                },
+                Err(e) => vald_conf = Err(e),
+              }
+            )
+          )
+        ) >>
+        char!('}') >> (())
+      )
+    ),
+    |_| vald_conf
+  )
+}
+
+
 /// Parses a tool conf field.
 fn tool_conf_field<'a, 'b>(
   bytes: & 'a [u8], builder: & 'b mut ToolConfBuilder, cnt: usize
@@ -264,7 +335,7 @@ fn tool_conf<'a>(
 fn tool_confs<'a>(
   bytes: & 'a [u8]
 ) -> IResult<
-  & 'a [u8], ( Vec<String>, Vec<Res<ToolConf>> )
+  & 'a [u8], ( Vec<String>, Res<ValdConf>, Vec<Res<ToolConf>> )
 > {
   let mut cnt = 0 ;
   do_parse!(
@@ -277,6 +348,8 @@ fn tool_confs<'a>(
       )
     ) >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
+    vald_conf: validator_conf >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
     vec: many1!(
       map!(
         terminated!(
@@ -285,7 +358,7 @@ fn tool_confs<'a>(
         ), |(tool, len)| { cnt += len ; tool }
       )
     ) >> (
-      ( opts.map(|o| o.xtract()).unwrap_or(vec![]), vec )
+      ( opts.map(|o| o.xtract()).unwrap_or(vec![]), vald_conf, vec )
     )
   )
 }
@@ -299,10 +372,11 @@ lazy_static!{
 
 /// Parses tool configurations from some bytes.
 pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
-  ( Vec<String>, Vec< ToolConf > )
+  ( Vec<String>, ValdConf, Vec< ToolConf > )
 > {
   match tool_confs(bytes) {
-    IResult::Done(rest, (opts, tools)) => {
+    IResult::Done(rest, (opts, vald_conf, tools)) => {
+      let vald_conf = vald_conf ? ;
       if rest.is_empty() {
         let mut tool_confs = Vec::with_capacity(tools.len()) ;
         for tool in tools.into_iter() {
@@ -329,7 +403,7 @@ pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
           tool_conf.cmd = cmd ;
           tool_confs.push(tool_conf)
         }
-        Ok( (opts, tool_confs) )
+        Ok( (opts, vald_conf, tool_confs) )
       } else {
         bail!("conf file parse error: could not parse whole file")
       }
