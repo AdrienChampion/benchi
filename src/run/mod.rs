@@ -148,16 +148,17 @@ impl ToolRun {
     ) ;
     let time = Instant::now() - start ;
 
-    if let Some(124) = status.code() {
+    if time >= self.conf.timeout ||
+      Some(124) == status.code() ||
+      Some(137) == status.code()
+    {
       return Ok( (time, None) )
     } else {
       let validation = self.instance.validate(
         & self.conf, tool_idx, bench_idx, & status
       ) ;
       return Ok(
-        (
-          time, Some( ( status, validation ) )
-        )
+        ( time, Some( ( status, validation ) ) )
       )
     }
   }
@@ -540,9 +541,7 @@ impl Master {
                 self.update_avg_runtime(tool, time) ;
                 if time > self.conf.timeout {
                   self.timeouts += 1 ;
-                  format!(
-                    "timeout({}) {}", self.conf.timeout.as_sec_str(), code
-                  )
+                  format!("timeout {}", code)
                 } else {
                   format!("{} {}", time.as_sec_str(), code)
                 }
@@ -562,9 +561,7 @@ impl Master {
                 self.update_avg_runtime(tool, time) ;
                 if time > self.conf.timeout {
                   self.timeouts += 1 ;
-                  format!(
-                    "timeout({}) ?", self.conf.timeout.as_sec_str()
-                  )
+                  "timeout ?".into()
                 } else {
                   format!("{} ?", time.as_sec_str())
                 }
@@ -575,7 +572,7 @@ impl Master {
                 "error".to_string()
               } else if time > self.conf.timeout {
                 self.timeouts += 1 ;
-                format!( "timeout({})", time.as_sec_str() )
+                "timeout".into()
               } else {
                 self.update_avg_runtime(tool, time) ;
                 time.as_sec_str()
@@ -584,7 +581,7 @@ impl Master {
 
           } else {
             self.timeouts += 1 ;
-            format!( "timeout({})", self.conf.timeout.as_sec_str() )
+            "timeout".into()
           } ;
 
           writeln!(

@@ -34,7 +34,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       warn!(
         conf =>
           "ignoring data for `{}`: everything is timeout or error",
-          conf.bad(& data.tool.name)
+          conf.sad(& data.tool.name)
       ) ;
       empty_data.push(data)
     }

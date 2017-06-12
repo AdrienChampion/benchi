@@ -321,7 +321,7 @@ pub trait GConfExt: ColorExt {
     let mut options = ::std::fs::OpenOptions::new() ;
     options.write(true) ;
     if executable {
-      options.mode(0o544) ;
+      options.mode(0o744) ;
     }
     if conf.ow_files {
       options.create(true).truncate(true) ;

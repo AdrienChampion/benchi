@@ -149,8 +149,8 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
         }
 
         let time_1 = d_1.map(
-          |time| time,
-          |_| {
+          |time, _| time,
+          || {
             timeouts_1 += 1 ;
             tmo_time_1
           }, || {
@@ -160,8 +160,8 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
           }
         ) ;
         let time_2 = d_2.map(
-          |time| time,
-          |_| {
+          |time, _| time,
+          || {
             timeouts_2 += 1 ;
             tmo_time_2
           }, || {

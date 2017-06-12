@@ -5,91 +5,59 @@ use errors::* ;
 use consts::data::* ;
 
 /// Duration from a success regex match.
-fn duration_of_time_re<'a>(cap: ::regex::Captures<'a>) -> Res<Duration> {
+fn duration_of_time_re<'a>(caps: ::regex::Captures<'a>) -> Res<Duration> {
   use std::str::FromStr ;
-  let s = cap.get(1).and_then(
-    |secs| {
-      let nanos = cap.get(2) ;
-      nanos.map(|nanos| (secs, nanos))
-    }
-  ).map(
-    |(secs, nanos)| u64::from_str(
-      secs.as_str()
-    ).and_then(
-      |secs| u32::from_str( nanos.as_str() ).map(
-        |nanos| Duration::new(secs, nanos)
-      )
+  u64::from_str( & caps["secs"] ).and_then(
+    |secs| u32::from_str( & caps["nanos"] ).map(
+      |nanos| Duration::new(secs, nanos)
     )
-  ) ;
-  match s {
-    None | Some( Err(_) ) => bail!(
-      "sorry, internal problem with regex `data_success_re`, \
-      please notify the developer"
-    ),
-    Some( Ok(val) ) => Ok(val),
-  }
+  ).chain_err(
+    || format!("while parsing time string")
+  )
 }
+
+/// Validation code.
+pub type Validation = isize ;
 
 /// Result of a tool running on a benchmark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Data {
-  /// Success with a time in microseconds.
-  Success(Duration),
+  /// Success with a time and an optional validation code.
+  Success( Duration, Option<Validation> ),
   /// Timeout.
-  Timeout(u64),
+  Timeout,
   /// Error.
   Error,
 }
 impl Data {
   /// Parses a string. Error on regex match but conversion fail. None if no
   /// regex match.
-  pub fn of_str(s: & str) -> Res< Option<Data> > {
-    use std::str::FromStr ;
-    if let Some(cap) = data_success_re.captures(s) {
-      return duration_of_time_re(cap).map(
-        |val| Some( Data::Success(val) )
+  pub fn of_str(
+    s: & str, validation: Option<Validation>
+  ) -> Res< Option<Data> > {
+    if let Some(caps) = success_re.captures(s) {
+      duration_of_time_re(caps).map(
+        |val| Some( Data::Success(val, validation) )
       )
+    } else if timeout_re.is_match(s) {
+      Ok( Some( Data::Timeout ) )
+    } else if error_re.is_match(s) {
+      Ok( Some(Data::Error) )
+    } else {
+      Ok(None)
     }
-    
-    if let Some(cap) = data_timeout_re.captures(s) {
-      let s = cap.get(1).and_then(
-        |secs| {
-          let micros = cap.get(2) ;
-          micros.map(|micros| (secs, micros))
-        }
-      ).map(
-        |(secs, micros)| u64::from_str(
-          & format!("{}{}", secs.as_str(), micros.as_str())
-        )
-      ) ;
-      match s {
-        None | Some( Err(_) ) => bail!(
-          "sorry, internal problem with regex `data_timeout_re`, \
-          please notify the developer"
-        ),
-        Some( Ok(val) ) => return Ok(
-          Some( Data::Timeout(val) )
-        ),
-      }
-    }
-
-    if s == "error" {
-      return Ok( Some(Data::Error) )
-    }
-
-    Ok(None)
   }
 
   /// Ternary map (?).
   pub fn map<
     T,
-    FSucc: FnOnce(Duration) -> T,
-    FTmo: FnOnce(u64) -> T,
+    FSucc: FnOnce(Duration, Option<Validation>) -> T,
+    FTmo: FnOnce() -> T,
     FErr: FnOnce() -> T,
   >(& self, f_succ: FSucc, f_tmo: FTmo, f_err: FErr) -> T {
     match * self {
-      Data::Success(time) => f_succ(time),
-      Data::Timeout(time) => f_tmo(time),
+      Data::Success(time, vald) => f_succ(time, vald),
+      Data::Timeout => f_tmo(),
       Data::Error => f_err(),
     }
   }
@@ -101,7 +69,7 @@ impl Data {
   /// True if `self` is a timeout.
   pub fn is_tmo(& self) -> bool {
     match * self {
-      Data::Timeout(_) => true,
+      Data::Timeout => true,
       _ => false
     }
   }
@@ -122,7 +90,10 @@ impl<T> ToolData<T> {
   /// Creates a tool data from a file.
   #[inline]
   fn polymorphic_of_file<
-    P: AsRef<Path>, F: Fn( Vec<(BenchIndex, Data)>, Duration ) -> Res<T>
+    P: AsRef<Path>,
+    F: Fn(
+      Vec<(BenchIndex, Data)>, Duration
+    ) -> Res<T>
   >(
     conf: & PlotConf, path: P, treatment: F
   ) -> Res<Self> {
@@ -174,22 +145,21 @@ impl<T> ToolData<T> {
       let line = line.chain_err(
         || format!("while reading data file for `{}`", conf.sad(& tool.name))
       ) ? ;
-      if let Some(cap) = runtime_re.captures(& line) {
-        let uid = cap.get(1).ok_or_else::<Error,_>(
-          ||
-            "sorry, internal problem with regex `runtime_re`, \
-            please notify the developer".into()
+      if let Some(caps) = result_re.captures(& line) {
+        let uid = usize::from_str(& caps["uid"]).chain_err(
+          || format!("while parsing benchmark uid")
         ) ? ;
-        let uid = usize::from_str( uid.as_str() ).chain_err(
-          || "sorry, internal problem with regex `runtime_re`, \
-            please notify the developer"
-        ) ? ;
-        let data = cap.get(3).ok_or_else::<Error, _>(
-          ||
-            "sorry, internal problem with regex `runtime_re`, \
-            please notify the developer".into()
-        ) ? ;
-        if let Some(data) = Data::of_str( data.as_str() ) ? {
+        let _bench = & caps["bench"] ;
+        let data = & caps["res"] ;
+        let vald = match & caps["vald"] {
+          "" => None,
+          vald => Some(
+            Validation::from_str(vald).chain_err(
+              || format!("while parsing validation code")
+            ) ?
+          ),
+        } ;
+        if let Some(data) = Data::of_str( data, vald ) ? {
           vec.push( (uid.into(), data) )
         } else {
           bail!(
@@ -251,7 +221,7 @@ impl ToolData<
             )
           ) ;
           match & data {
-            & Data::Success(time) => {
+            & Data::Success(time, _) => {
               max_time = ::std::cmp::max(max_time, time) ;
               min_time = Some(
                 ::std::cmp::min(
@@ -259,7 +229,7 @@ impl ToolData<
                 )
               )
             }
-            & Data::Timeout(_) => tmo = Some(timeout),
+            & Data::Timeout => tmo = Some(timeout),
             _ => (),
           }
           let was_there = map.insert(bench, data) ;
@@ -333,7 +303,7 @@ impl ToolData< Vec<Duration> > {
       conf, path, |vec, _| {
         let mut res = Vec::with_capacity( vec.len() ) ;
         for (_, data) in vec {
-          if let Data::Success(time) = data {
+          if let Data::Success(time, _) = data {
             res.push(time)
           }
         }
