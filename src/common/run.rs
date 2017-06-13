@@ -179,3 +179,113 @@ specified in the configuration file.\
     run_app
   }
 }
+
+
+
+/// `RunConf` from some matches. `None` if `run` subcommand not present.
+pub fn run_clap<'a>(
+  matches: & ::clap::Matches<'a>
+) -> Option< Res<Clap> > {
+  use std::str::FromStr ;
+  use clap::utils::* ;
+
+  // Retrieve configuration file path if in run mode. Early return otherwise.
+  let conf_file = match matches.subcommand_matches("run") {
+    Some(sub) => sub.value_of("CONF").expect(
+      "unreachable(CONF): required"
+    ).to_string(),
+    None => return None,
+  } ;
+
+  let mut matches = matches.clone() ;
+  // Original global configuration (ignores `conf_file`).
+  let conf = ::clap::gconf_of_matches(& matches) ;
+
+  // Load configuration file.
+  let (vald_conf, tools, file_matches) = match load_conf(& conf, conf_file) {
+    Ok(res) => res,
+    Err(e) => return Some( Err(e) ),
+  } ;
+  // Update hierarchical matches.
+  matches.push(file_matches) ;
+
+  // Actual global configuration.
+  let conf = ::clap::gconf_of_matches(& matches) ;
+
+  let matches = matches.subcommand_matches("run").expect(
+    "unreachable(run): already checked to be present"
+  ) ;
+
+  // Output directory.
+  let out_dir = matches.value_of("out_dir").expect(
+    "unreachable(out_dir): default is provided"
+  ).to_string() ;
+
+  // Bench and tool parallel settings.
+  let bench_par = matches.value_of("para_benchs").map(
+    |s| usize::from_str(& s)
+  ).expect(
+    "unreachable(bench_par): default is provided"
+  ).expect(
+    "unreachable(bench_par): input validated in clap"
+  ) ;
+  let tool_par = matches.value_of("para_tools").map(
+    |s| usize::from_str(& s)
+  ).expect(
+    "unreachable(tool_par): default is provided"
+  ).expect(
+    "unreachable(tool_par): input validated in clap"
+  ) ;
+
+  let try = matches.value_of("try").map(
+    |s| usize::from_str(& s).expect(
+      "unreachable(tool_par): input validated in clap"
+    )
+  ) ;
+
+  // Timeout.
+  let timeout = matches.value_of("timeout").map(
+    |s| tmo_of_str(& s)
+  ).expect(
+    "unreachable(timeout): default is provided"
+  ).expect(
+    "unreachable(timeout): input validated in clap"
+  ) ;
+  
+  let log_stdout = matches.value_of("log_stdout").and_then(
+    |s| {
+      bool_of_str(& s)
+    }
+  ).expect(
+    "unreachable(log_stdout): \
+    default is provided and input validated in clap"
+  ) ;
+  
+  let tool_file = matches.value_of("CONF").expect(
+    "unreachable(CONF): required"
+  ).to_string() ;
+
+  // Bench file.
+  let bench_file = if let Some(f) = matches.value_of("BENCHS") {
+    f
+  } else {
+    return Some(
+      Err(
+        "no benchmark file specified in \
+        command line or configuration file".into()
+      )
+    )
+  } ;
+
+  let run_conf = RunConf::mk(
+    bench_par, tool_par, timeout, try, log_stdout,
+    out_dir, tool_file, bench_file.into(),
+    conf, vald_conf
+  ) ;
+
+  Some(
+    Ok(
+      Clap::Run(run_conf, tools)
+    )
+  )
+}

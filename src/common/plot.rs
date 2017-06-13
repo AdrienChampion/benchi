@@ -226,6 +226,85 @@ Output plot file\
   )
 }
 
+/// `PlotConf` from some matches. `None` if `plot` subcommand is not present.
+pub fn plot_clap<'a>(
+  matches: & ::clap::Matches<'a>
+) -> Option< Res<Clap> > {
+  use clap::utils::* ;
+
+  if let Some(plot_matches) = matches.subcommand_matches("plot") {
+    // Global configuration.
+    let conf = ::clap::gconf_of_matches(& matches) ;
+
+    let file = plot_matches.value_of("PLOT_FILE").expect(
+      "unreachable(plot:cumul:FILE): required"
+    ).to_string() ;
+
+    let run_gp = bool_of_str(
+      plot_matches.value_of("run_gp").expect(
+        "unreachable(plot:run_gp): default provided"
+      )
+    ).expect(
+      "unreachable(plot:run_gp): input validated in clap"
+    ) ;
+
+    let no_errors = bool_of_str(
+      plot_matches.value_of("no_errors").expect(
+        "unreachable(plot:no_errors): default provided"
+      )
+    ).expect(
+      "unreachable(plot:no_errors): input validated in clap"
+    ) ;
+
+    let errs_as_tmo = bool_of_str(
+      plot_matches.value_of("errs_as_tmo").expect(
+        "unreachable(plot:errs_as_tmo): default provided"
+      )
+    ).expect(
+      "unreachable(plot:errs_as_tmo): input validated in clap"
+    ) ;
+
+    let fmt = PlotFmt::of_str(
+      plot_matches.value_of("gp_fmt").expect(
+        "unreachable(plot:gp_fmt): default provided"
+      )
+    ).expect(
+      "unreachable(plot:gp_fmt): input validated in clap"
+    ) ;
+
+    let cmd = if run_gp {
+      plot_matches.value_of("then").map(|s| s.to_string())
+    } else { None } ;
+
+    let plot_conf = PlotConf::mk(
+      file, run_gp, cmd, fmt, no_errors, errs_as_tmo, conf
+    ) ;
+
+    if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
+      Some(
+        Ok( cumul_clap(plot_conf, & cumul_matches) )
+      )
+    } else if let Some(
+      compare_matches
+    ) = plot_matches.subcommand_matches("compare") {
+      Some(
+        Ok( compare_clap(plot_conf, & compare_matches) )
+      )
+    } else {
+      Some(
+        Err(
+          "unreachable(plot:<unknown>): \
+          subcommand required can only be `cumul` or `compare`".into()
+        )
+      )
+    }
+  } else {
+    None
+  }
+}
+
+
+
 /// The cumul subcommand.
 pub fn cumul_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
   use clap_lib::* ;
@@ -238,6 +317,22 @@ pub fn cumul_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
 Data files to use for plot generation\
       "
     ).value_name("data file").multiple(true).required(true)
+  )
+}
+
+/// Cumul plot conf from some **sub**-matches.
+pub fn cumul_clap<'a>(
+  conf: PlotConf, matches: & ::clap::Matches<'a>
+) -> Clap {
+  let mut data_files = vec![] ;
+  for data_file in matches.primary_values_of("DATA").expect(
+    "unreachable(plot:cumul:DATA): required"
+  ) {
+    data_files.push( data_file.to_string() )
+  }
+
+  Clap::Plot(
+    conf, PlotKind::Cumul { files: data_files }
   )
 }
 
@@ -261,3 +356,21 @@ Second data file (y axis)\
     ).value_name("data file").required(true)
   )
 }
+
+/// Compare plot conf from some **sub**-matches.
+pub fn compare_clap<'a>(
+  conf: PlotConf, matches: & ::clap::Matches<'a>
+) -> Clap {
+  let file_1 = matches.value_of("FILE_1").expect(
+    "unreachable(plot:compare:FILE_1): required"
+  ).to_string() ;
+  let file_2 = matches.value_of("FILE_2").expect(
+    "unreachable(plot:compare:FILE_2): required"
+  ).to_string() ;
+
+  Clap::Plot(
+    conf, PlotKind::Compare { file_1, file_2 }
+  )
+}
+
+

@@ -221,64 +221,6 @@ impl VerbExt for Verb {
 }
 
 
-/// Has a global conf.
-pub trait GConfExt: ColorExt {
-  /// The global conf.
-  #[inline]
-  fn gconf(& self) -> & GConf ;
-  /// Opens a file in write mode. Creates parent directory if necessary.
-  #[inline]
-  fn open_file_writer_exe<P: AsRef<Path>>(
-    & self, path: P, executable: bool
-  ) -> Res<File> {
-    use std::os::unix::fs::OpenOptionsExt ;
-    // Create parent directory if necessary.
-    {
-      let mut buf = path.as_ref().to_path_buf() ;
-      if buf.pop() {
-        mk_dir(& buf).chain_err(
-          || "while creating parent directory"
-        ) ?
-      }
-    }
-    let conf = self.gconf() ;
-    let mut options = ::std::fs::OpenOptions::new() ;
-    options.write(true) ;
-    if executable {
-      options.mode(0o744) ;
-    }
-    if conf.ow_files {
-      options.create(true).truncate(true) ;
-    } else {
-      options.create_new(true) ;
-    }
-    options.open( path.as_ref() ).map_err(
-      |e| match e.kind() {
-        ::std::io::ErrorKind::AlreadyExists => {
-          ErrorKind::Msg(
-            format!(
-              "file exists, not overwriting without {}", self.emph("-f")
-            )
-          ).into()
-        },
-        _ => e.into(),
-      }
-    )
-  }
-  /// Opens a file in write mode. Creates parent directory if necessary.
-  #[inline]
-  fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
-    self.open_file_writer_exe(path, false)
-  }
-}
-impl<T: GConfExt> ColorExt for T {
-  fn styles(& self) -> & Styles { & self.gconf().styles }
-}
-impl<T: GConfExt> VerbExt for T {
-  fn verb(& self) -> & Verb { & self.gconf().verb }
-}
-
-
 /// Validation code info.
 #[derive(Debug, Clone)]
 pub struct ValdCode {
@@ -347,15 +289,32 @@ impl ValdConfExt for ValdConf {
 }
 
 
+
+
+
+
+
+
+
+
 /// Global configuration.
 #[derive(Debug, Default, Clone)]
 pub struct GConf {
   /// Verbosity.
   verb: Verb,
+  /// Colored flag (for comparison).
+  colored: bool,
   /// Styles.
   styles: Styles,
   /// Overwrite files when present.
   pub ow_files: bool,
+}
+impl PartialEq for GConf {
+  fn eq(& self, other: & Self) -> bool {
+    self.verb == other.verb &&
+    self.colored == other.colored &&
+    self.ow_files == other.ow_files
+  }
 }
 impl GConfExt for GConf {
   fn gconf(& self) -> & GConf { self }
@@ -364,9 +323,74 @@ impl GConf {
   /// Creates a configuration.
   #[inline]
   pub fn mk(verb: Verb, colored: bool, ow_files: bool) -> Self {
-    GConf { verb, styles: Styles::mk(colored), ow_files }
+    GConf { verb, colored, styles: Styles::mk(colored), ow_files }
   }
 }
+
+
+/// Has a global conf.
+pub trait GConfExt: ColorExt {
+  /// The global conf.
+  #[inline]
+  fn gconf(& self) -> & GConf ;
+  /// Opens a file in write mode. Creates parent directory if necessary.
+  #[inline]
+  fn open_file_writer_exe<P: AsRef<Path>>(
+    & self, path: P, executable: bool
+  ) -> Res<File> {
+    use std::os::unix::fs::OpenOptionsExt ;
+    // Create parent directory if necessary.
+    {
+      let mut buf = path.as_ref().to_path_buf() ;
+      if buf.pop() {
+        mk_dir(& buf).chain_err(
+          || "while creating parent directory"
+        ) ?
+      }
+    }
+    let conf = self.gconf() ;
+    let mut options = ::std::fs::OpenOptions::new() ;
+    options.write(true) ;
+    if executable {
+      options.mode(0o744) ;
+    }
+    if conf.ow_files {
+      options.create(true).truncate(true) ;
+    } else {
+      options.create_new(true) ;
+    }
+    options.open( path.as_ref() ).map_err(
+      |e| match e.kind() {
+        ::std::io::ErrorKind::AlreadyExists => {
+          ErrorKind::Msg(
+            format!(
+              "file exists, not overwriting without {}", self.emph("-f")
+            )
+          ).into()
+        },
+        _ => e.into(),
+      }
+    )
+  }
+  /// Opens a file in write mode. Creates parent directory if necessary.
+  #[inline]
+  fn open_file_writer<P: AsRef<Path>>(& self, path: P) -> Res<File> {
+    self.open_file_writer_exe(path, false)
+  }
+}
+impl<T: GConfExt> ColorExt for T {
+  fn styles(& self) -> & Styles { & self.gconf().styles }
+}
+impl<T: GConfExt> VerbExt for T {
+  fn verb(& self) -> & Verb { & self.gconf().verb }
+}
+
+
+
+
+
+
+
 
 
 /// A tool configuration.
