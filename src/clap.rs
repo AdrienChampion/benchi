@@ -2,108 +2,116 @@
 
 use std::str::FromStr ;
 
-use clap_lib::{ App, Arg, ArgMatches } ;
-
-use regex::Regex ;
+use clap_lib::{
+  App, Arg, SubCommand, ArgMatches, AppSettings, ArgGroup
+} ;
 
 use errors::* ;
 use common::* ;
+use common::run::* ;
+use common::plot::* ;
+use common::inspect::* ;
 
+use consts::clap::* ;
 
-fn tmo_err(got: & str) -> Error {
-  clap_err(
-    "argument timeout", format!("expected `{}`, got {}", tmo_format, got)
-  )
-}
-static tmo_format: & str = "[int]s|[int]min" ;
-lazy_static!{
-  static ref tmo_regex: Regex = Regex::new(
-    r"^(?P<value>\d*)(?P<unit>min|s)$"
-  ).unwrap() ;
-}
+use clap::utils::* ;
 
-/// Timeout from a string.
-fn tmo_of_str(s: & str) -> Res<Duration> {
-  if let Some(caps) = tmo_regex.captures(s) {
-    debug_assert_eq!{ caps.len(), 3 }
+/// Useful functions for clap.
+pub mod utils {
+  use std::str::FromStr ;
 
-    let value = if let Ok(value) = u64::from_str(
-      & caps["value"]
-    ) { value } else {
+  use errors::* ;
+  use common::* ;
+  use consts::clap::* ;
+
+  /// Returns a clap error for the timeout argument.
+  pub fn tmo_err(got: & str) -> Error {
+    clap_err(
+      "argument timeout",
+      format!("expected `{}`, got {}", ::consts::clap::tmo_format, got)
+    )
+  }
+
+  /// Timeout from a string.
+  pub fn tmo_of_str(s: & str) -> Res<Duration> {
+    if let Some(caps) = tmo_regex.captures(s) {
+      debug_assert_eq!{ caps.len(), 3 }
+
+      let value = if let Ok(value) = u64::from_str(
+        & caps["value"]
+      ) { value } else {
+        bail!(
+          clap_err(
+            "timeout argument",
+            format!("expected integer, got `{}`", & caps["value"])
+          )
+        )
+      } ;
+
+      let coef = match & caps["unit"] {
+        "s" => 1,
+        "min" => 60,
+        "" => bail!(
+          clap_err(
+            "timeout argument",
+            format!("missing time unit `s` or `min`")
+          )
+        ),
+        s => bail!(
+          clap_err(
+            "timeout argument",
+            format!("expected time unit `s` or `min`, got `{}`", s)
+          )
+        ),
+      } ;
+
+      Ok( Duration::new(coef * value, 0) )
+    } else {
       bail!(
-        clap_err(
-          "timeout argument",
-          format!("expected integer, got `{}`", & caps["value"])
-        )
+        tmo_err("timeout argument", )
       )
-    } ;
+    }
+  }
 
-    let coef = match & caps["unit"] {
-      "s" => 1,
-      "min" => 60,
-      "" => bail!(
-        clap_err(
-          "timeout argument",
-          format!("missing time unit `s` or `min`")
-        )
+  /// Timeout validator.
+  pub fn tmo_validator(s: String) -> Result<(), String> {
+    if let Ok(_) = tmo_of_str(& s) {
+      Ok(())
+    } else {
+      Err(
+        format!("expected <{}>, got `{}`", ::consts::clap::tmo_format, s)
+      )
+    }
+  }
+
+  /// Boolean of a string.
+  pub fn bool_of_str(s: & str) -> Option<bool> {
+    match & s as & str {
+      "on" | "true" => Some(true),
+      "off" | "false" => Some(false),
+      _ => None,
+    }
+  }
+
+  /// Validates boolean input.
+  pub fn bool_validator(s: String) -> Result<(), String> {
+    if let Some(_) = bool_of_str(& s) {
+      Ok(())
+    } else {
+      Err(
+        format!("expected `on/true` or `off/false`, got `{}`", s)
+      )
+    }
+  }
+
+  /// Validates integer input.
+  pub fn int_validator(s: String) -> Result<(), String> {
+    match usize::from_str(& s) {
+      Ok(_) => Ok(()),
+      Err(_) => Err(
+        format!("expected an integer, got `{}`", s)
       ),
-      s => bail!(
-        clap_err(
-          "timeout argument",
-          format!("expected time unit `s` or `min`, got `{}`", s)
-        )
-      ),
-    } ;
-
-    Ok( Duration::new(coef * value, 0) )
-  } else {
-    bail!(
-      tmo_err("timeout argument", )
-    )
-  }
-}
-
-/// Timeout validator.
-fn tmo_validator(s: String) -> Result<(), String> {
-  if let Ok(_) = tmo_of_str(& s) {
-    Ok(())
-  } else {
-    Err(
-      format!("expected <{}>, got `{}`", tmo_format, s)
-    )
-  }
-}
-
-/// Bool format.
-static bool_format: & str = "on|true|off|false" ;
-
-/// Boolean of a string.
-fn bool_of_str(s: & str) -> Option<bool> {
-  match & s as & str {
-    "on" | "true" => Some(true),
-    "off" | "false" => Some(false),
-    _ => None,
-  }
-}
-
-/// Validates boolean input.
-fn bool_validator(s: String) -> Result<(), String> {
-  if let Some(_) = bool_of_str(& s) {
-    Ok(())
-  } else {
-    Err(
-      format!("expected `on/true` or `off/false`, got `{}`", s)
-    )
-  }
-}
-
-/// Validates integer input.
-fn int_validator(s: String) -> Result<(), String> {
-  match usize::from_str(& s) {
-    Ok(_) => Ok(()),
-    Err(_) => Err(
-      format!("expected an integer, got `{}`", s)
-    ),
+    }
   }
 }
 
@@ -185,7 +193,9 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
     }
   }
 
-  let option_clap = App::main_opts().run_opts(1, None) ;
+  let option_clap = main_app().subcommand(
+    conf_run_subcommand()
+  ) ;
   let matches = match option_clap.get_matches_from_safe(& actual_options) {
     Ok(matches) => matches,
     Err(e) => {
@@ -207,15 +217,16 @@ fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
 
 /// Clap.
 pub fn work() -> Res< Clap > {
-  use clap_lib::* ;
 
-  let matches = App::main_opts().run_opts(
-    2, Some(
-      Arg::with_name("CONF").help(
-        "The configuration file (see `benchi conf -h` for details)"
-      ).required(true).index(1).value_name("conf file")
-    )
-  ).plot_opts().inspect_opts().conf_opts().get_matches() ;
+  let matches = main_app().subcommand(
+    clap_run_subcommand()
+  ).subcommand(
+    plot_subcommand()
+  ).subcommand(
+    inspect_subcommand()
+  ).subcommand(
+    conf_subcommand()
+  ).get_matches() ;
 
   let conf = {
     Matches { primary: & matches, secondary: None }.clap_main()
@@ -324,254 +335,59 @@ pub fn work() -> Res< Clap > {
 }
 
 
-
-/// Extends `clap`'s `App`.
-trait AppExt {
-  type Argument ;
-  /// Adds the main options.
-  fn main_opts() -> Self ;
-  /// Adds the `run` options, except `conf`.
-  ///
-  /// `bench_index` is the index to give to the bench option.
-  fn run_opts(
-    self, bench_index: u64, add_arg: Option<Self::Argument>,
-  ) -> Self ;
-  /// Adds the `plot` options.
-  fn plot_opts(self) -> Self ;
-  /// Adds the `inspect` options.
-  fn inspect_opts(self) -> Self ;
-  /// Adds the `conf` options, the subcommand explaining configuration files.
-  fn conf_opts(self) -> Self ;
-}
-impl<'a, 'b> AppExt for App<'a, 'b> {
-  type Argument = Arg<'a, 'b> ;
-  fn main_opts() -> Self {
-    use clap_lib::* ;
-    App::new(
-      crate_name!()
-    ).version(
-      crate_version!()
-    ).author(
-      crate_authors!()
-    ).about(
-      "`benchi` is an easy to use benchmarking tool."
-    ).arg(
-      Arg::with_name("force").short("-f").long("--force").help(
-        "When writing a file, overwrite if present"
-      )
-    ).arg(
-      Arg::with_name("quiet").short("-q").long("--quiet").help(
-        "No output, except errors"
-      ).conflicts_with("verbose")
-    ).arg(
-      Arg::with_name("verbose").short("-v").long("--verb").help(
-        "Verbose output"
-      ).conflicts_with("quiet")
-    ).arg(
-      Arg::with_name("colored").short("-c").long("--color").help(
-        "Colored output"
-      ).default_value("on").takes_value(true).validator(
-        bool_validator
-      ).value_name(bool_format)
-    ).after_help(
-      "\
+/// The main application.
+pub fn main_app<'a, 'b>() -> App<'a, 'b> {
+  App::new(
+    crate_name!()
+  ).version(
+    crate_version!()
+  ).author(
+    crate_authors!()
+  ).about(
+    "`benchi` is a benchmarking tool."
+  ).arg(
+    Arg::with_name("force").short("-f").long("--force").help(
+      "When writing a file, overwrite if present"
+    )
+  ).arg(
+    Arg::with_name("quiet").short("-q").long("--quiet").help(
+      "No output, except errors"
+    ).conflicts_with("verbose")
+  ).arg(
+    Arg::with_name("verbose").short("-v").long("--verb").help(
+      "Verbose output"
+    ).conflicts_with("quiet")
+  ).group(
+    ArgGroup::with_name("verbosity").args(
+      & [ "quiet", "verbose" ]
+    )
+  ).arg(
+    Arg::with_name("colored").short("-c").long("--color").help(
+      "Colored output"
+    ).default_value("on").takes_value(true).validator(
+      bool_validator
+    ).value_name(bool_format)
+  ).after_help(
+    "\
 # Path substitutions
 
 Output paths such as `run`'s output directory or `plot`'s output file can use
 benchi's substitution mechanism. That is, occurrences of `<today>` are replaced
 with `<year>_<month>_<day>` and occurrences of `<now>` are replaced with
 `<hour>_<minute>`.
-      "
-    ).setting( AppSettings::SubcommandRequired )
-  }
+    "
+  ).setting( AppSettings::SubcommandRequired )
+}
 
-  fn run_opts(
-    self, bench_index: u64, add_arg: Option<Arg<'a, 'b>>,
-  ) -> Self {
-    use clap_lib::* ;
 
-    let app = SubCommand::with_name("run").about(
-      "Runs benchmarks according to some configuration file."
-    ).after_help(
-      "\
-The different tools run on each benchmark: the value of `--tools` decides how
-many tools can run at the same time. The value of `--benchs` specifies the
-number of benchmarks handled in parallel.
 
-So, with `--benchs 2` and `--tools 3`, 6 (2*3) threads will handle up to 2
-benchmarks simultaneously, with up to 3 tools running in parallel on each of
-them. There's actually more threads than that do organize everything, but only
-6 of them really run tools.
-                     ___________master___________
-                    |                            |
-               ___bench___                  ___bench___
-              |     |     |                |     |     |
-             tool  tool  tool             tool  tool  tool
 
-# Examples
+/// The configuration subcommand (explanation).
+fn conf_subcommand<'a, 'b>() -> App<'a, 'b> {
 
-`run --benchs 6 --tools 1 ...` runs the tools sequentially on 6 benchmarks at
-the same time
-`run --benchs 1 --tools 2 ...` runs up to 2 tools in parallel on each benchmark
-sequentially\
-      "
-    ).arg(
-      Arg::with_name("out_dir").short("-o").long("--out_dir").help(
-        "Sets the output directory."
-      ).value_name("dir").default_value("<today>_at_<now>").takes_value(true)
-    ).arg(
-      Arg::with_name("timeout").short("-t").long("--timeout").help(
-        "Sets the timeout for each run"
-      ).value_name(tmo_format).validator(
-        tmo_validator
-      ).default_value("1min").takes_value(true)
-    ).arg(
-      Arg::with_name("para_benchs").long("--benchs").help(
-        "Number of benchmarks to run in parallel"
-      ).value_name("int").default_value("1").takes_value(true).validator(
-        int_validator
-      )
-    ).arg(
-      Arg::with_name("para_tools").long("--tools").help(
-        "Number of tools to run in parallel on each benchmark"
-      ).value_name("int").default_value("1").takes_value(true).validator(
-        int_validator
-      )
-    ).arg(
-      Arg::with_name("try").long("--try").help(
-        "Only runs on `n` benchmarks (to try the set up)"
-      ).value_name("int").takes_value(true).validator(
-        int_validator
-      )
-    ).arg(
-      Arg::with_name("log_stdout").long("--log").help(
-        "\
-(De)activates stdout logging of the tools.\
-        "
-      ).default_value("on").takes_value(true).validator(
-        bool_validator
-      ).value_name(bool_format)
-    ).arg(
-      Arg::with_name("BENCHS").help(
-        "\
-The file containing the inputs to give to the tools. Optional, can be
-specified in the configuration file.\
-        "
-      ).value_name("bench file").index(bench_index)
-    ) ;
-
-    let app = if let Some(arg) = add_arg {
-      app.arg(arg)
-    } else {
-      app
-    } ;
-    self.subcommand(app)
-  }
-
-  fn plot_opts(self) -> Self {
-    use clap_lib::* ;
-
-    let app = SubCommand::with_name("plot").about(
-      "Generates a plot."
-    ).setting( AppSettings::SubcommandRequired ).arg(
-      Arg::with_name("then").long("--then").help(
-        "\
-Specifies a command to run on the pdf generated (ignored if `--pdf off`)\
-        "
-      ).value_name("command").takes_value(true)
-    ).arg(
-      Arg::with_name("run_gp").long("--run_gp").help(
-        "\
-Runs `gnuplot` (or not) to generate the final plot\
-        "
-      ).default_value("on").takes_value(true).validator(
-        bool_validator
-      ).value_name(bool_format)
-    ).arg(
-      Arg::with_name("no_errors").long("--no_errs").help(
-        "\
-Completely ignore benchmarks for which at least one tool returned an error\
-        "
-      ).default_value("off").takes_value(true).validator(
-        bool_validator
-      ).value_name(bool_format)
-    ).arg(
-      Arg::with_name("errs_as_tmo").long("--errs_as_tmo").help(
-        "\
-Consider errors as timeouts\
-        "
-      ).default_value("off").takes_value(true).validator(
-        bool_validator
-      ).value_name(bool_format)
-    ).arg(
-      Arg::with_name("gp_fmt").long("--to").help(
-        "\
-Specifies the format the plot should generate (latex format is a bit
-experimental for now)\
-        "
-      ).default_value("pdf").takes_value(true).validator(
-        PlotFmt::validator
-      ).value_name( PlotFmt::values() )
-    ).arg(
-      Arg::with_name("PLOT_FILE").help(
-        "\
-Output plot file\
-        "
-      ).value_name("plot file").required(true).index(1)
-    ).subcommand(
-      SubCommand::with_name("cumul").about(
-        "Generates a cumulative plot"
-      ).arg(
-        Arg::with_name("DATA").help(
-          "\
-Data files to use for plot generation\
-          "
-        ).value_name("data file").multiple(true).required(true)
-      )
-    ).subcommand(
-      SubCommand::with_name("compare").about(
-        "Generates a comparison scatterplot between two tools"
-      ).arg(
-        Arg::with_name("FILE_1").help(
-          "\
-First data file (x axis)\
-          "
-        ).value_name("data file").required(true)
-      ).arg(
-        Arg::with_name("FILE_2").help(
-          "\
-Second data file (y axis)\
-          "
-        ).value_name("data file").required(true)
-      )
-    ) ;
-
-    // let app = if let Some(arg) = add_arg {
-    //   app.arg(arg)
-    // } else {
-    //   app
-    // } ;
-    self.subcommand(app)
-  }
-
-  /// Adds inspection options.
-  fn inspect_opts(self) -> Self {
-    use clap_lib::* ;
-
-    let app = SubCommand::with_name("inspect").about(
-      "Interactive data inspection. (UNIMPLEMENTED)"
-    ).about("UNIMPLEMENTED") ;
-
-    self.subcommand(app)
-  }
-
-  /// Adds configuration explanation options.
-  fn conf_opts(self) -> Self {
-    use clap_lib::* ;
-
-    let app = SubCommand::with_name("conf").about(
-      "Explanation of the configuration file format."
-    ).about("\
+  SubCommand::with_name("conf").about(
+    "Explanation of the configuration file format."
+  ).before_help("\
 To run benchmarks you must provide a configuration file that describes the
 tools to run. It can also include options normally passed as command-line
 arguments (CLA), so that you can simply run `benchi run my_conf_file` (more on
@@ -592,11 +408,11 @@ The graph name is optional, if none is provided benchi will use 'name' as the
 graph name.
 
 The actual syntax is
-               <desc> ::= <name> { <short> [<graph>] <command> }
-              <graph> ::= graph: <name>
-              <short> ::= short: [a-zA-Z0-9_-.]+
-            <command> ::= cmd: \"[^\\\"]+\"
-               <name> ::= [^\\n{{}}\\\"/]+
+             <desc> ::= <name> { <short> [<graph>] <command> }
+            <graph> ::= graph: <name>
+            <short> ::= short: [a-zA-Z0-9_-.]+
+          <command> ::= cmd: \"[^\\\"]+\"
+             <name> ::= [^\\n{{}}\\\"/]+
 
 ## Example:
 
@@ -625,7 +441,7 @@ below.
 > \"
 
 With these options in `my_conf`, then
-                   `benchi -q run --benchs 10 my_conf my_other_benchs`
+                 `benchi -q run --benchs 10 my_conf my_other_benchs`
 
 benchmarks 3 tools in parallel with a timeout of 3 seconds and dumps the output
 to `output_<today>_at_<now>` (see Path Substitution in the top-level help for
@@ -633,17 +449,14 @@ details on `<today>` and `<now>`). BUT the rest of the configuration file's
 options (`-v` and `--tools`) are overriden by the CLAs, so benchi will run in
 quiet mode over 10 benchmarks in parallel, using `my_other_benchs` as the
 benchmark list file.\
-    ").arg(
-      Arg::with_name("CONF").help(
-        "\
+  ").arg(
+    Arg::with_name("CONF").help(
+      "\
 Dumps an example configuration file to <file.conf>, and a benchmark list file
 to <file.benchs>.\
-        "
-      ).required(true).index(1).value_name("file.conf")
-    ) ;
-
-    self.subcommand(app)
-  }
+      "
+    ).required(true).index(1).value_name("file.conf")
+  )
 }
 
 

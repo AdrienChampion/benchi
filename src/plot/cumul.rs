@@ -3,6 +3,7 @@
 use std::iter::Iterator ;
 
 use common::* ;
+use common::plot::* ;
 use errors::* ;
 use loading::ToolData ;
 

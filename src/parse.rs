@@ -8,30 +8,97 @@ use nom::{ IResult, multispace } ;
 use common::* ;
 use errors::* ;
 
-/// A tool configuration (parsing version).
+
+
+
+
+/// Tool configuration builder.
 #[derive(Clone, Debug)]
-pub struct ToolConfParsing {
-  /// Tool name.
-  pub name: Spnd<String>,
-  /// Short name.
-  pub short: Spnd<String>,
-  /// Graph name.
-  pub graph: Spnd<String>,
-  /// Command (lines).
-  pub cmd: Spnd< Vec<String> >,
-  /// Optional validator.
-  pub validator: Option< Spnd<String> >,
+pub struct ToolConfBuilder {
+  name: String,
+  short: Option<String>,
+  graph: Option<String>,
+  cmd: Option< Vec<String> >,
+  validator: Option<String>,
 }
-impl ToolConfParsing {
-  /// Translates to the normal `ToolConf` structure.
-  pub fn to_tool_conf(self) -> ToolConf {
-    ToolConf {
-      name: self.name.xtract(),
-      short: self.short.xtract(),
-      graph: self.graph.xtract(),
-      cmd: self.cmd.xtract(),
-      validator: self.validator.map(|v| v.xtract()),
+impl ToolConfBuilder {
+  /// Builder from a name.
+  pub fn of_name(name: String) -> Self {
+    ToolConfBuilder {
+      name, short: None, graph: None, cmd: None, validator: None
     }
+  }
+  /// Sets the short name.
+  pub fn set_short(& mut self, short: String) -> Res<()> {
+    if let Some(ref old) = self.short {
+      bail!(
+        format!(
+          "trying to set the short name for {} twice: `{}` and `{}`",
+          self.name, old, short
+        )
+      )
+    } else {
+      self.short = Some(short) ;
+      Ok(())
+    }
+  }
+  /// Sets the graph name.
+  pub fn set_graph(& mut self, graph: String) -> Res<()> {
+    if let Some(ref old) = self.graph {
+      bail!(
+        format!(
+          "trying to set the graph name for {} twice: `{}` and `{}`",
+          self.name, old, graph
+        )
+      )
+    } else {
+      self.graph = Some(graph) ;
+      Ok(())
+    }
+  }
+  /// Sets the command name.
+  pub fn set_cmd(& mut self, cmd: Vec<String>) -> Res<()> {
+    if let Some(_) = self.cmd {
+      bail!(
+        format!(
+          "trying to set the command for {} twice", self.name
+        )
+      )
+    } else {
+      self.cmd = Some(cmd) ;
+      Ok(())
+    }
+  }
+  /// Sets the validator name.
+  pub fn set_validator(& mut self, validator: String) -> Res<()> {
+    if let Some(_) = self.validator {
+      bail!(
+        format!(
+          "trying to set the validator for {} twice", self.name
+        )
+      )
+    } else {
+      self.validator = Some(validator) ;
+      Ok(())
+    }
+  }
+
+  /// Extracts a tool configuration.
+  pub fn to_conf(self) -> Res<ToolConf> {
+    let name = self.name ;
+    let short = self.short.ok_or_else::<Error, _>(
+      || format!("no short name given for `{}`", name).into()
+    ) ? ;
+    let graph = if let Some(graph) = self.graph { graph } else {
+      name.clone()
+    } ;
+    let cmd = self.cmd.ok_or_else::<Error, _>(
+      || format!("no command given for `{}`", name).into()
+    ) ? ;
+    let validator = self.validator ;
+    Ok(
+      ToolConf { name, short, graph, cmd, validator }
+    )
   }
 }
 

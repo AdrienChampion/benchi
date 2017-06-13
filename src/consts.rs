@@ -2,9 +2,7 @@
 */
 
 /// Time regex as a string (for reuse).
-static time_re: & str = "\
-  (?P<secs>[0-9][0-9]*).(?P<nanos>[0-9][0-9]*)\
-" ;
+static time_re: & str = r"(?P<secs>\d\d*).(?P<nanos>\d\d*)" ;
 
 /// Validator constants.
 pub mod validator {
@@ -20,6 +18,47 @@ err=\"$4\"
   " ;
 }
 
+/// Clap-related constants.
+pub mod clap {
+  use regex::Regex ;
+
+  /// Format for the timeout.
+  pub static tmo_format: & str = "[int]s|[int]min" ;
+  /// Format for booleans.
+  pub static bool_format: & str = "on|true|off|false" ;
+
+  #[test]
+  fn regexes() {
+    let tmo_res = tmo_regex.captures("720s").unwrap() ;
+    assert_eq!( & tmo_res["value"], "720" ) ;
+    assert_eq!( & tmo_res["unit"], "s" ) ;
+
+    let tmo_res = tmo_regex.captures("3min").unwrap() ;
+    assert_eq!( & tmo_res["value"], "3" ) ;
+    assert_eq!( & tmo_res["unit"], "min" ) ;
+
+    assert!( ! tmo_regex.is_match("720") ) ;
+    assert!( ! tmo_regex.is_match("720 s") ) ;
+    assert!( ! tmo_regex.is_match("s720") ) ;
+    assert!( ! tmo_regex.is_match("s 720") ) ;
+    assert!( ! tmo_regex.is_match("s") ) ;
+    assert!( ! tmo_regex.is_match("720 min") ) ;
+    assert!( ! tmo_regex.is_match("min720") ) ;
+    assert!( ! tmo_regex.is_match("min 720") ) ;
+    assert!( ! tmo_regex.is_match("min") ) ;
+    assert!( ! tmo_regex.is_match("") ) ;
+  }
+
+  lazy_static!{
+    #[doc = "
+Regex for timeout in clap. Two groups: `value` (int) and `unit` (`min` or `s`).
+    "]
+    pub static ref tmo_regex: Regex = Regex::new(
+      r"^(?P<value>\d\d*)(?P<unit>min|s)$"
+    ).unwrap() ;
+  }
+}
+
 /// Substitutions in user-provided data.
 pub mod subst {
   use regex::Regex ;
@@ -32,7 +71,7 @@ pub mod subst {
   pub static timeout: & str = "<timeout>" ;
 
   #[test]
-  fn subst_regexes() {
+  fn regexes() {
     let today_res = today_re.replace_all(
       "blah<today> <today> <today>foo", "date"
     ) ;
@@ -71,36 +110,24 @@ pub mod dump {
   pub static cmt_pref:  & str = "#" ;
 
   #[test]
-  fn subst_regexes() {
-    let mut res = name_re.captures_iter("# tool-Name 71") ;
-    let tmp = res.next() ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["name"]), Some("tool-Name 71")
-    ) ;
-    let mut res = short_name_re.captures_iter("# short: tool-SHORT_Name_71") ;
-    let tmp = res.next() ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["short"]), Some("tool-SHORT_Name_71")
-    ) ;
-    let mut res = graph_name_re.captures_iter("# graph: tool GRAPH Name_71") ;
-    let tmp = res.next() ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["graph"]), Some("tool GRAPH Name_71")
-    ) ;
-    let mut res = cmd_re.captures_iter(
+  fn regexes() {
+    let res = name_re.captures("# tool-Name 71").unwrap() ;
+    assert_eq!(& res["name"], "tool-Name 71") ;
+
+    let res = short_name_re.captures("# short: tool-SHORT_Name_71").unwrap() ;
+    assert_eq!(& res["short"], "tool-SHORT_Name_71") ;
+
+    let res = graph_name_re.captures("# graph: tool GRAPH Name_71").unwrap() ;
+    assert_eq!(& res["graph"], "tool GRAPH Name_71") ;
+
+    let res = cmd_re.captures(
       r"# cmd: command args `eval` | piped 'blah'"
-    ) ;
-    let tmp = res.next() ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["cmd"]),
-      Some("command args `eval` | piped 'blah'")
-    ) ;
-    let mut res = timeout_re.captures_iter(
-      r"# timeout: 743044.123456789"
-    ) ;
-    let tmp = res.next() ;
-    assert_eq!( tmp.as_ref().map(|caps| & caps["secs"]), Some("743044") ) ;
-    assert_eq!( tmp.as_ref().map(|caps| & caps["nanos"]), Some("123456789") )
+    ).unwrap() ;
+    assert_eq!(& res["cmd"], "command args `eval` | piped 'blah'") ;
+
+    let res = timeout_re.captures(r"# timeout: 743044.123456789").unwrap() ;
+    assert_eq!( & res["secs"], "743044" ) ;
+    assert_eq!( & res["nanos"], "123456789" )
   }
   
   lazy_static!{
@@ -174,30 +201,18 @@ pub mod data {
   use regex::Regex ;
 
   #[test]
-  fn subst_regexes() {
-    let mut res = result_re.captures_iter(
+  fn regexes() {
+    let res = result_re.captures(
       r#"42 "benchmark line from file" success 72"#
-    ) ;
-    let tmp = res.next() ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["uid"]), Some("42")
-    ) ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["bench"]),
-      Some("benchmark line from file")
-    ) ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["res"]), Some("success")
-    ) ;
-    assert_eq!(
-      tmp.as_ref().map(|caps| & caps["vald"]), Some("72")
-    ) ;
-    let mut res = success_re.captures_iter(
-      r"743044.123456789"
-    ) ;
-    let tmp = res.next() ;
-    assert_eq!( tmp.as_ref().map(|caps| & caps["secs"]), Some("743044") ) ;
-    assert_eq!( tmp.as_ref().map(|caps| & caps["nanos"]), Some("123456789") ) ;
+    ).unwrap() ;
+    assert_eq!(& res["uid"], "42") ;
+    assert_eq!(& res["bench"], "benchmark line from file") ;
+    assert_eq!(& res["res"], "success") ;
+    assert_eq!(& res["vald"], "72") ;
+
+    let res = success_re.captures(r"743044.123456789").unwrap() ;
+    assert_eq!(& res["secs"], "743044") ;
+    assert_eq!(& res["nanos"], "123456789") ;
     assert!( timeout_re.is_match("timeout") ) ;
     assert!( error_re.is_match("error") )
   }
@@ -214,10 +229,10 @@ Regex extracting a benchmark line. Four groups:
     "]
     pub static ref result_re: Regex = Regex::new(
       r#"(?x)^
-        \s*(?P<uid>[0-9][0-9]*)
+        \s*(?P<uid>\d\d*)
         \s*"(?P<bench>[^"]*)"
         \s*(?P<res>[^\s]*)
-        \s*(?P<vald>[0-9]*)
+        \s*(?P<vald>\d*)
         \s*
       $"#
     ).expect(

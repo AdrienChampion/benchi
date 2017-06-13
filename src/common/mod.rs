@@ -18,6 +18,13 @@ use ansi::{ Style, Colour } ;
 
 use errors::* ;
 
+pub mod run ;
+use common::run::* ;
+pub mod plot ;
+use common::plot::* ;
+pub mod inspect ;
+// use common::inspect::* ;
+
 /// Unimplemented.
 macro_rules! bail_unimpl {
   ($conf:expr, $stuff:tt) => (
@@ -100,22 +107,6 @@ pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
   path.exists() && path.is_file()
 }
 
-/// Plot kinds.
-pub enum PlotKind {
-  /// Cumulative plot.
-  Cumul {
-    /// Data files.
-    files: Vec<String>,
-  },
-  /// Comparison scatterplot.
-  Compare {
-    /// Data file 1.
-    file_1: String,
-    /// Data file 2.
-    file_2: String,
-  }
-}
-
 /// Clap result.
 pub enum Clap {
   /// Run mode.
@@ -125,73 +116,6 @@ pub enum Clap {
   /// Conf mode (explanation). Second parameter is the file to dump the
   /// example configuration to.
   Conf(GConf, String),
-}
-
-/// Plot formats.
-#[derive(Clone, Copy, Debug)]
-pub enum PlotFmt {
-  /// PDF.
-  Pdf,
-  /// SVG.
-  Svg,
-  /// PNG.
-  Png,
-  /// LaTeX.
-  Tex,
-}
-impl PlotFmt {
-
-  /// Extension of a format.
-  pub fn ext(& self) -> & 'static str {
-    match * self {
-      PlotFmt::Pdf => "pdf",
-      PlotFmt::Svg => "svg",
-      PlotFmt::Png => "png",
-      PlotFmt::Tex => "tex",
-    }
-  }
-  /// Gnuplot terminal of a format.
-  pub fn term(& self) -> & 'static str {
-    match * self {
-      PlotFmt::Pdf => "\
-        set term pdf enhanced \
-        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
-      ",
-      PlotFmt::Svg => "\
-        set term svg enhanced\
-        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
-      ",
-      PlotFmt::Png => "\
-        set term pngcairo enhanced\
-        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
-      ",
-      PlotFmt::Tex => "set term latex",
-    }
-  }
-  /// Describes the legal values of the flag, should match the body of
-  /// `Self::of_str`.
-  #[inline]
-  pub fn values() -> & 'static str {
-    "pdf|svg|png|tex"
-  }
-  /// Plot format of a string. Update `Self::values` if you change this.
-  pub fn of_str(s: & str) -> Option<Self> {
-    match s {
-      "pdf" => Some(PlotFmt::Pdf),
-      "svg" => Some(PlotFmt::Svg),
-      "png" => Some(PlotFmt::Png),
-      "tex" => Some(PlotFmt::Tex),
-      _ => None,
-    }
-  }
-  /// Plot format string validator.
-  pub fn validator(s: String) -> Result<(), String> {
-    if let None = PlotFmt::of_str(& s) {
-      Err( format!("expected `{}`, got `{}`", Self::values(), s) )
-    } else {
-      Ok(())
-    }
-  }
 }
 
 
@@ -441,196 +365,6 @@ impl GConf {
   #[inline]
   pub fn mk(verb: Verb, colored: bool, ow_files: bool) -> Self {
     GConf { verb, styles: Styles::mk(colored), ow_files }
-  }
-}
-
-
-/// Plot configuration.
-pub struct PlotConf {
-  /// Output file.
-  pub file: String,
-  /// Generate pdf?
-  pub pdf: bool,
-  /// Command to run.
-  pub then: Option<String>,
-  /// Gnuplot format (terminal).
-  pub fmt: PlotFmt,
-  /// Ignore errors?
-  pub no_errors: bool,
-  /// Consider errors as timeout?
-  pub errs_as_tmo: bool,
-  /// Global conf.
-  gconf: GConf,
-}
-impl GConfExt for PlotConf {
-  fn gconf(& self) -> & GConf { & self.gconf }
-}
-impl PlotConf {
-  /// Creates a plot conf.
-  #[inline]
-  pub fn mk(
-    file: String, pdf: bool, then: Option<String>,
-    fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
-    gconf: GConf
-  ) -> Self {
-    let file = file.path_subst() ;
-    PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
-  }
-}
-
-
-/// Run configuration. Constructor is private on purpose, it does path
-/// substitution.
-#[derive(Debug)]
-pub struct RunConf {
-  /// Number of parallel bench runs.
-  pub bench_par: usize,
-  /// Number of parallel tool runs.
-  pub tool_par: usize,
-  /// Timeout.
-  pub timeout: Duration,
-  /// Output directory.
-  pub out_dir: String,
-  /// Tool configuration file.
-  pub tool_file: String,
-  /// Benchmark file.
-  pub bench_file: String,
-  /// Trying?
-  pub try: Option<usize>,
-  /// Logging stdout?
-  pub log_stdout: bool,
-  /// Global configuration.
-  gconf: GConf,
-  /// Validator Conf.
-  vald_conf: ValdConf,
-}
-impl GConfExt for RunConf {
-  fn gconf(& self) -> & GConf { & self.gconf }
-}
-impl ValdConfExt for RunConf {
-  fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
-}
-impl RunConf {
-  /// Creates a configuration.
-  #[inline]
-  pub fn mk(
-    bench_par: usize, tool_par: usize,
-    timeout: Duration, try: Option<usize>, log_stdout: bool,
-    out_dir: String, tool_file: String, bench_file: String,
-    gconf: GConf, vald_conf: ValdConf
-  ) -> Self {
-    let out_dir = out_dir.path_subst() ;
-    RunConf {
-      bench_par, tool_par, timeout, try, log_stdout,
-      out_dir, tool_file, bench_file,
-      gconf, vald_conf
-    }
-  }
-
-  /// Name of the validator for some benchmark.
-  #[inline]
-  pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
-    if tool.validator.is_none() {
-      None
-    } else {
-      let mut path = PathBuf::from(& self.out_dir) ;
-      path.push(& tool.short) ;
-      path.push("validator") ;
-      path.set_extension("sh") ;
-      Some(path)
-    }
-  }
-}
-
-
-
-/// Tool configuration builder.
-#[derive(Clone, Debug)]
-pub struct ToolConfBuilder {
-  name: String,
-  short: Option<String>,
-  graph: Option<String>,
-  cmd: Option< Vec<String> >,
-  validator: Option<String>,
-}
-impl ToolConfBuilder {
-  /// Builder from a name.
-  pub fn of_name(name: String) -> Self {
-    ToolConfBuilder {
-      name, short: None, graph: None, cmd: None, validator: None
-    }
-  }
-  /// Sets the short name.
-  pub fn set_short(& mut self, short: String) -> Res<()> {
-    if let Some(ref old) = self.short {
-      bail!(
-        format!(
-          "trying to set the short name for {} twice: `{}` and `{}`",
-          self.name, old, short
-        )
-      )
-    } else {
-      self.short = Some(short) ;
-      Ok(())
-    }
-  }
-  /// Sets the graph name.
-  pub fn set_graph(& mut self, graph: String) -> Res<()> {
-    if let Some(ref old) = self.graph {
-      bail!(
-        format!(
-          "trying to set the graph name for {} twice: `{}` and `{}`",
-          self.name, old, graph
-        )
-      )
-    } else {
-      self.graph = Some(graph) ;
-      Ok(())
-    }
-  }
-  /// Sets the command name.
-  pub fn set_cmd(& mut self, cmd: Vec<String>) -> Res<()> {
-    if let Some(_) = self.cmd {
-      bail!(
-        format!(
-          "trying to set the command for {} twice", self.name
-        )
-      )
-    } else {
-      self.cmd = Some(cmd) ;
-      Ok(())
-    }
-  }
-  /// Sets the validator name.
-  pub fn set_validator(& mut self, validator: String) -> Res<()> {
-    if let Some(_) = self.validator {
-      bail!(
-        format!(
-          "trying to set the validator for {} twice", self.name
-        )
-      )
-    } else {
-      self.validator = Some(validator) ;
-      Ok(())
-    }
-  }
-
-  /// Extracts a tool configuration.
-  pub fn to_conf(self) -> Res<ToolConf> {
-    let name = self.name ;
-    let short = self.short.ok_or_else::<Error, _>(
-      || format!("no short name given for `{}`", name).into()
-    ) ? ;
-    let graph = if let Some(graph) = self.graph { graph } else {
-      name.clone()
-    } ;
-    let cmd = self.cmd.ok_or_else::<Error, _>(
-      || format!("no command given for `{}`", name).into()
-    ) ? ;
-    let validator = self.validator ;
-    Ok(
-      ToolConf { name, short, graph, cmd, validator }
-    )
   }
 }
 
@@ -1256,43 +990,6 @@ impl DurationExt for Duration {
   }
 }
 
-
-/// A plot command.
-pub enum Plot {
-  /// Compares two tools benchmark per benchmark (scatterplot).
-  Comparative {
-    /// The file to write the plot to.
-    file: Option<String>,
-    /// The first short tool name.
-    tool_1: String,
-    /// The second short tool name.
-    tool_2: String,
-  },
-
-  /// Cumulative plot for some tools.
-  Cumulative {
-    /// The file to write the plot to.
-    file: Option<String>,
-    /// Some tools to compare.
-    tools: Vec<String>,
-  },
-}
-impl Plot {
-  /// Creates a comparative plot command.
-  #[inline]
-  pub fn comparative(
-    file: Option<String>, tool_1: String, tool_2: String
-  ) -> Self {
-    Plot::Comparative { file, tool_1, tool_2 }
-  }
-  /// Creates a cumulative plot command.
-  #[inline]
-  pub fn cumulative(
-    file: Option<String>, tools: Vec<String>
-  ) -> Self {
-    Plot::Cumulative { file, tools }
-  }
-}
 
 
 /// Extends string types with a substitution function.

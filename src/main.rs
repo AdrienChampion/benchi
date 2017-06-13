@@ -32,8 +32,9 @@ pub mod plot ;
 pub mod inspect ;
 
 
-use common::* ;
 use errors::* ;
+use common::* ;
+use common::run::* ;
 
 
 /// Errors.

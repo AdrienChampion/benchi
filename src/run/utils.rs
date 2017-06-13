@@ -4,8 +4,8 @@ Note that `ToolRun`s communicate the results directly to the master. All they
 send to `BenchRun`s is that they're done.
 */
 
-use common::* ;
 use errors::* ;
+use common::* ;
 
 pub use std::thread::{ spawn, sleep, JoinHandle } ;
 pub use std::process::{ Child, Command, Stdio, ExitStatus } ;

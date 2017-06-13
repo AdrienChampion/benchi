@@ -1,6 +1,7 @@
 //! Types to load and process bench results.
 
 use common::* ;
+use common::plot::* ;
 use errors::* ;
 use consts::data::* ;
 

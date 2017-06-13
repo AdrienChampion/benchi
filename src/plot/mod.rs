@@ -3,7 +3,7 @@
 pub mod cumul ;
 pub mod compare ;
 
-use common::* ;
+use common::plot::* ;
 use errors::* ;
 
 /// Plot things.

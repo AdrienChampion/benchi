@@ -10,8 +10,9 @@ tool to run to `ToolRun`s.
   run
 */
 
-use common::* ;
 use errors::* ;
+use common::* ;
+use common::run::* ;
 
 pub mod utils ;
 use self::utils::* ;

@@ -1,13 +1,14 @@
-//! Comparison plot.
+//! Comparative plot.
 
 use common::* ;
+use common::plot::* ;
 use errors::* ;
 use loading::{ Data, ToolData } ;
 
-/// Generates the comparison scatterplot between two tools.
+/// Generates the comparative scatterplot between two tools.
 pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   log!{
-    conf => "Generating comparison scatterplot..." ; {
+    conf => "Generating comparative scatterplot..." ; {
       log!{ conf, verb => "  loading data files..." }
     }
   }
@@ -99,7 +100,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   }
   let mut file = conf.open_file_writer(& data_file).chain_err(
     || format!(
-      "while opening comparison data file `{}` (write)", conf.emph(& data_file)
+      "while opening comparative data file `{}` (write)", conf.emph(& data_file)
     )
   ) ? ;
   file.write_all(
@@ -115,7 +116,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
     )
   ).chain_err(
     || format!(
-      "while writing to comparison data file `{}`", conf.emph(& data_file)
+      "while writing to comparative data file `{}`", conf.emph(& data_file)
     )
   ) ? ;
   // Count double timeouts, errors and double errors.
@@ -178,7 +179,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
             ).as_bytes()
           ).chain_err(
             || format!(
-              "while writing to comparison data file `{}`",
+              "while writing to comparative data file `{}`",
               conf.emph(& data_file)
             )
           ) ?
@@ -219,7 +220,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
 
   let mut file = conf.open_file_writer(& conf.file).chain_err(
     || format!(
-      "while opening comparison plot file `{}` (write)", conf.emph(& conf.file)
+      "while opening comparative plot file `{}` (write)", conf.emph(& conf.file)
     )
   ) ? ;
 
@@ -315,7 +316,7 @@ plot \\
     )
   ).chain_err(
     || format!(
-      "while writing to comparison plot file `{}`", conf.emph(& conf.file)
+      "while writing to comparative plot file `{}`", conf.emph(& conf.file)
     )
   ) ? ;
 
