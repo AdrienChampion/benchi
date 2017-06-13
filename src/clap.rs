@@ -29,6 +29,7 @@ pub mod utils {
 
   use errors::* ;
   use common::* ;
+  use common::run::* ;
   use consts::clap::* ;
 
   /// Returns a clap error for the timeout argument.

@@ -31,6 +31,20 @@ impl PlotConf {
     fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
     gconf: GConf
   ) -> Self {
+    use std::process::Command ;
+    let pdf = if pdf {
+      let status = Command::new("gnuplot").arg("-V").status() ;
+      if ! status.map(|s| s.success()).unwrap_or(false) {
+        warn!{
+          gconf =>
+            "gnuplot does not seem to be installed" ;
+            "deactivating pdf generation"
+        }
+        false
+      } else {
+        true
+      }
+    } else { false } ;
     let file = file.path_subst() ;
     PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
   }

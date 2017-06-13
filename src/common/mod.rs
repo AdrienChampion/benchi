@@ -18,13 +18,6 @@ use ansi::{ Style, Colour } ;
 
 use errors::* ;
 
-pub mod run ;
-use common::run::* ;
-pub mod plot ;
-use common::plot::* ;
-pub mod inspect ;
-// use common::inspect::* ;
-
 /// Unimplemented.
 macro_rules! bail_unimpl {
   ($conf:expr, $stuff:tt) => (
@@ -91,6 +84,13 @@ macro_rules! warn {
     }
   )
 }
+
+pub mod run ;
+use common::run::* ;
+pub mod plot ;
+use common::plot::* ;
+pub mod inspect ;
+// use common::inspect::* ;
 
 /// Creates a directory if not already there.
 #[inline]
@@ -218,74 +218,6 @@ impl Default for Verb {
 }
 impl VerbExt for Verb {
   fn verb(& self) -> & Verb { self }
-}
-
-
-/// Validation code info.
-#[derive(Debug, Clone)]
-pub struct ValdCode {
-  /// Alias.
-  pub alias: String,
-  /// Description.
-  pub desc: String,
-  /// Color (optional).
-  pub color: Option<String>,
-}
-
-/// Validator configuration.
-#[derive(Debug, Clone)]
-pub struct ValdConf {
-  /// Success codes.
-  succ: HashMap<i32, ValdCode>,
-}
-impl ValdConf {
-  /// Creates an empty validator configuration.
-  pub fn empty() -> Self {
-    ValdConf { succ: HashMap::new() }
-  }
-
-  /// Adds a new success validation code.
-  pub fn add_succ(mut self, code: i32, info: ValdCode) -> Res<Self> {
-    if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {
-      Err(
-        format!(
-          "code `{}` is already registered as success `{}`", code, desc
-        ).into()
-      )
-    } else {
-      Ok(self)
-    }
-  }
-}
-/// Validator configuration extensions.
-pub trait ValdConfExt {
-  /// Accessor.
-  fn vald_conf(& self) -> & ValdConf ;
-
-  /// Checks whether an exit status is a success.
-  ///
-  /// Returns true if no success code is registered and `status.success()`, or
-  /// the status is `Some(code)` and `code` is registered as a success.
-  fn check_succ(& self, status: & ExitStatus) -> bool {
-    let vald_conf = self.vald_conf() ;
-    if vald_conf.succ.is_empty() {
-      status.success()
-    } else if let Some(code) = status.code() {
-      vald_conf.succ.get(& code).is_some()
-    } else {
-      false
-    }
-  }
-
-  /// Iterator over the success codes declared.
-  fn validators_iter(& self) -> ::std::collections::hash_map::Iter<
-    i32, ValdCode
-  > {
-    self.vald_conf().succ.iter()
-  }
-}
-impl ValdConfExt for ValdConf {
-  fn vald_conf(& self) -> & ValdConf { self }
 }
 
 
