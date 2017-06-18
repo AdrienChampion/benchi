@@ -97,6 +97,8 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
   ).and_then(
     |()| file.write_all( plot_prefix.as_bytes() )
   ).and_then(
+    |()| dump_linestyles(& mut file, bench_count)
+  ).and_then(
     |()| if bench_count <= 10 {
       file.write_all( "set xtics 1\n".as_bytes() )
     } else {
@@ -188,28 +190,10 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
 }
 
 
-
 static plot_prefix: & str = r#"
 
 set border 3 linecolor rgbcolor "0x000000"
 set key textcolor rgbcolor "0x000000"
-
-set style line 1  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC0000"
-set style line 2  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x66CC00"
-set style line 3  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x00CCCC"
-set style line 4  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC6600"
-set style line 5  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x0000CC"
-set style line 6  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC00CC"
-set style line 7  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x999900"
-set style line 8  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x606060"
-set style line 9  dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC0000"
-set style line 10 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x66CC00"
-set style line 11 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x00CCCC"
-set style line 12 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC6600"
-set style line 13 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x0000CC"
-set style line 14 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0xCC00CC"
-set style line 15 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x999900"
-set style line 16 dt 1 lw 1 ps 0.5 pi 15 lc rgb "0x606060"
 
 set xtics nomirror
 set ytics nomirror
@@ -223,3 +207,30 @@ set key above samplen 2 font ",11"
 set logscale x
 set autoscale
 "# ;
+
+/// Dumps the linestyles for the plot.
+fn dump_linestyles<W: Write>(
+  w: & mut W, bench_count: usize
+) -> ::std::io::Result<()> {
+  write!(
+    w, "\
+set style line 1  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC0000\"
+set style line 2  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x4C9900\"
+set style line 3  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x00CCCC\"
+set style line 4  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC6600\"
+set style line 5  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x0000CC\"
+set style line 6  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC00CC\"
+set style line 7  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x999900\"
+set style line 8  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x606060\"
+set style line 9  dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC0000\"
+set style line 10 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x66CC00\"
+set style line 11 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x00CCCC\"
+set style line 12 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC6600\"
+set style line 13 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x0000CC\"
+set style line 14 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0xCC00CC\"
+set style line 15 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x999900\"
+set style line 16 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x606060\"
+\
+    ", bench_count / 20
+  )
+}

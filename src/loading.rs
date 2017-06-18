@@ -108,7 +108,7 @@ impl<T> ToolData<T> {
     ) ? ;
     let reader = BufReader::new(file) ;
     let mut lines = reader.lines() ;
-    let tool = ToolConf::from_dump(& mut lines).chain_err(
+    let (tool, mut line_cnt) = ToolConf::from_dump(& mut lines, 0).chain_err(
       || format!(
         "while loading data file `{}`", conf.sad(
           path.as_ref().to_str().expect(
@@ -136,9 +136,9 @@ impl<T> ToolData<T> {
         )
       }
     ) ? ;
+    line_cnt += 1 ;
 
     let mut vec: Vec<(BenchIndex, _)> = Vec::with_capacity(100) ;
-    let mut line_cnt = 0 ;
     'lines: for line in lines {
       use std::str::FromStr ;
       line_cnt += 1 ;
@@ -152,7 +152,7 @@ impl<T> ToolData<T> {
         let _bench = & caps["bench"] ;
         let data = & caps["res"] ;
         let vald = match & caps["vald"] {
-          "" => None,
+          "?" => None,
           vald => Some(
             Validation::from_str(vald).chain_err(
               || format!("while parsing validation code")
@@ -164,8 +164,8 @@ impl<T> ToolData<T> {
         } else {
           bail!(
             format!(
-              "data on line {} is ill-formed",
-              conf.emph(& format!("{}", line_cnt))
+              "data on line {} is ill-formed: `{}`",
+              conf.emph(& format!("{}", line_cnt)), data
             )
           )
         }

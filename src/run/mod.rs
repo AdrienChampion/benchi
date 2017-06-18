@@ -49,10 +49,11 @@ impl ToolRun {
 
   /// Launches the tool run listen/run loop.
   pub fn launch(self) {
+
     'work: loop {
 
       // Notify bench run we're waiting.
-      if let Err(_) = self.bench_run.send( self.index ) {
+      if let Err(_) = self.bench_run.send(self.index) {
         // Disconnected, can happen if we're done. (Maybe? Nothing we can
         // do anyways.)
         break 'work
@@ -235,6 +236,7 @@ impl BenchRun {
       spawn( move || tool_run.launch() ) ;
       ()
     }
+
     BenchRun {
       conf, instance, index,
       master, from_master, tool_runs, from_tool_runs
@@ -243,11 +245,10 @@ impl BenchRun {
 
   /// Launches the listen/dispatch loop.
   pub fn launch(mut self) {
-
     'work: loop {
 
       // Notify master we're waiting.
-      if let Err(_) = self.master.send( Ok( self.index ) ) {
+      if let Err(_) = self.master.send( Ok(self.index) ) {
         // Disconnected, can happen if we're done. (Maybe? Nothing we can
         // do anyways.)
         break 'work
@@ -282,13 +283,15 @@ impl BenchRun {
       'find_idle: loop {
         match self.from_tool_runs.recv() {
           // Someone's ready.
-          Ok( index ) => if let Ok(()) = self.tool_runs[index].send(
-            (tool, bench)
-          ) {
-            continue 'dispatch_tool
-          } else {
-            // Disconnected, keep going.
-            continue 'find_idle
+          Ok(index) => {
+            if let Ok(()) = self.tool_runs[index].send(
+              (tool, bench)
+            ) {
+              continue 'dispatch_tool
+            } else {
+              // Disconnected, keep going.
+              continue 'find_idle
+            }
           },
           // Disconnected, no more tool runs alive.
           Err(RecvError) => bail!(
@@ -329,7 +332,12 @@ pub struct Master {
   /// Average runtime (does not include timeouts and errors).
   ///
   /// Second element is the number of benchmarks solved.
-  pub avg_runtime: ToolVec<(Duration, u32)>
+  pub avg_runtime: ToolVec<(Duration, u32)>,
+  /// Stores the exit status for each tool on the current benchmark. `None` if
+  /// timeout or error.
+  pub codes: HashMap< BenchIndex, ToolVec< Option<i32> > >,
+  /// Number of inconsistent results obtained.
+  pub inconsistencies: usize
 }
 impl Master {
   /// Creates (but does not run) a master. Initializes everything.
@@ -378,6 +386,8 @@ impl Master {
       }
     ) ? ;
 
+    let codes = HashMap::with_capacity( instance.bench_len() ) ;
+
     Ok(
       Master {
         conf, instance,
@@ -389,6 +399,8 @@ impl Master {
         errors: 0,
         timeouts: 0,
         avg_runtime,
+        codes,
+        inconsistencies: 0,
       }
     )
   }
@@ -508,6 +520,19 @@ impl Master {
 
             BenchRes::Success(time, status) => {
               self.update_avg_runtime(tool, time) ;
+              if let Err(e) = self.register_result(
+                bench, tool, status
+              ).chain_err(
+                || format!(
+                  "during registration and consistency checking of {} on {}",
+                  self.conf.emph( & self.instance[tool].name ),
+                  self.conf.emph( self.instance.str_of_bench(bench) )
+                )
+              ) {
+                println!("") ;
+                print_err(& * self.conf, e, false) ;
+                println!("")
+              }
               format!( "{} {}", time.as_sec_str(), status.as_data_str() )
             },
 
@@ -562,6 +587,77 @@ impl Master {
       }
     }
     Ok(false)
+  }
+
+  /// Register a tool run on a bench, and checks that all the tools agree on
+  /// the exit code, if any.
+  fn register_result(
+    & mut self, bench: BenchIndex, tool: ToolIndex, status: ExitStatus
+  ) -> Res<()> {
+    {
+      let instance = self.instance.clone() ; // `Arc` clone, not real clone.
+      let mut codes = self.codes.entry(bench).or_insert_with(
+        || instance.tools().map(
+          |_| None
+        ).collect()
+      ) ;
+      codes[tool] = status.code()
+    }
+
+    if let Some(code) = status.code() {
+      let codes = self.codes.get(& bench).ok_or_else::<Error, _>(
+        || "unreachable: register_result".into()
+      ) ? ;
+      
+      let mut disagree = HashMap::new() ;
+
+      for other_tool in self.instance.tools() {
+        if tool != other_tool {
+          if let Some(nu_code) = codes[other_tool] {
+            if code != nu_code {
+              let prev = disagree.insert(other_tool, nu_code) ;
+              assert!( prev.is_none() )
+            }
+          }
+        }
+      }
+
+      if ! disagree.is_empty() {
+        let code_str = if let Some(
+          vald_conf
+        ) = self.conf.vald_conf().get(code) {
+          & vald_conf.desc
+        } else { "<unknown exit code>" } ;
+        warn!(
+          self.conf =>
+            "Some tools disagree on benchmark `{}`:", self.conf.bad(
+              self.instance.str_of_bench(bench)
+            ) ;
+            "result for {} validated with {}, but",
+            self.conf.emph( & self.instance[tool].name ),
+            self.conf.sad( code_str ) ;
+            {
+              for (tool, code) in disagree.into_iter() {
+                let code_str = if let Some(
+                  vald_conf
+                ) = self.conf.vald_conf().get(code) {
+                  & vald_conf.desc
+                } else {
+                  "<unknown exit code>"
+                } ;
+                warn!(
+                  self.conf, line =>
+                    "  result for {} validated with {}",
+                    self.conf.emph( & self.instance[tool].name ),
+                    self.conf.bad( code_str )
+                )
+              }
+            }
+        ) ;
+        self.inconsistencies += 1
+      }
+    }
+    Ok(())
   }
 
   /// Deletes the directories of a tool if they're not empty.

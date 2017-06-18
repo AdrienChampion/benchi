@@ -382,6 +382,19 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
               }
           }
         }
+      } {
+        if master.inconsistencies > 0 {
+          log!{
+            conf =>
+            "" ; "{}", conf.bad(
+              & format!(
+                "Found {} inconsistenc{}",
+                master.inconsistencies,
+                if master.inconsistencies > 1 { "ies" } else { "y" }
+              )
+            )
+          }
+        }
       }
   ) ;
 

@@ -10,7 +10,7 @@ use common::* ;
 pub use std::thread::{ spawn, sleep, JoinHandle } ;
 pub use std::process::{ Child, Command, Stdio, ExitStatus } ;
 pub use std::sync::mpsc::{
-  channel, Sender, Receiver, RecvError, TryRecvError
+  channel, RecvError, TryRecvError
 } ;
 
 /// Sets the pipes for a command.
@@ -74,18 +74,22 @@ pub fn tool_to_master_channel() -> (
   channel()
 }
 
-/// Channel from bench runs to master.
-pub fn bench_to_master_channel() -> (
-  Sender< Res<usize> >, Receiver< Res<usize> >
-) {
+/// Channel from bench runs to master. Communicates the uid of the bench
+/// run so that the master can send it a new job. Also sends a hashmap of
+/// disagreeing exit codes if there was some disagreement.
+pub fn bench_to_master_channel() -> Channel< Res<usize> > {
   channel()
 }
 
-/// Channel from tool runs to bench runs.
+/// Information from tool run to bench run. Communicates the uid of the tool
+/// run so that the bench run can send it a new job. Also sends the exit
+/// status, `None` if timeout or error.
 ///
 /// Not a `Res`: the tool run communicates failures to the master directly.
-pub fn tool_to_bench_channel() -> (
-  Sender< usize >, Receiver< usize >
-) {
+pub type ToolToBench = (usize, Option< (ToolIndex, ExitCode) >) ;
+
+
+/// Channel from tool runs to bench runs. 
+pub fn tool_to_bench_channel() -> Channel<usize> {
   channel()
 }

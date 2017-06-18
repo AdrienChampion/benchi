@@ -31,9 +31,17 @@ impl PlotConf {
     fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
     gconf: GConf
   ) -> Self {
-    use std::process::Command ;
+    use std::process::{ Command, Stdio } ;
     let pdf = if pdf {
-      let status = Command::new("gnuplot").arg("-V").status() ;
+      let status = Command::new(
+        "gnuplot"
+      ).arg("-V").stdin(
+        Stdio::null()
+      ).stdout(
+        Stdio::null()
+      ).stderr(
+        Stdio::null()
+      ).status() ;
       if ! status.map(|s| s.success()).unwrap_or(false) {
         warn!{
           gconf =>
@@ -83,11 +91,11 @@ impl PlotFmt {
         font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
       ",
       PlotFmt::Svg => "\
-        set term svg enhanced\
+        set term svg enhanced \
         font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
       ",
       PlotFmt::Png => "\
-        set term pngcairo enhanced\
+        set term pngcairo enhanced \
         font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
       ",
       PlotFmt::Tex => "set term latex",

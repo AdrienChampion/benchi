@@ -8,9 +8,10 @@ pub use std::fs::File ;
 pub use std::io::{ Lines, Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
 pub use std::path::{ Path, PathBuf } ;
-pub use std::iter::Iterator ;
+pub use std::iter::{ Iterator, FromIterator } ;
 pub use std::sync::Arc ;
 pub use std::collections::HashMap ;
+pub use std::sync::mpsc::{ Sender, Receiver } ;
 
 pub use pbr::{ ProgressBar, MultiBar } ;
 
@@ -76,11 +77,16 @@ macro_rules! warn {
     if ! $conf.quiet() {
       println!("") ;
       println!("{}:", $conf.sad("|===| Warning")) ;
+      warn!{ $conf, line => $($stuff)+ ; }
+      println!("{}", $conf.sad("|===|")) ;
+      println!("")
+    }
+  ) ;
+  ($conf:expr, line => $($stuff:tt)+) => (
+    if ! $conf.quiet() {
       log!{
         |internal| $conf.sad("| ") => $($stuff)+ ;
       }
-      println!("{}", $conf.sad("|===|")) ;
-      println!("")
     }
   )
 }
@@ -358,11 +364,14 @@ impl ToolConf {
     writeln!(w, "{}{}", * timeout_key, timeout.as_sec_str()) ? ;
     writeln!(w, "{}", & * cmt_pref)
   }
-  /// Loads a tool configuration from a dump.
-  pub fn from_dump<Br: BufRead>(lines: & mut Lines<Br>) -> Res<Self> {
+  /// Loads a tool configuration from a dump. Returns the number of lines read.
+  pub fn from_dump<Br: BufRead>(
+    lines: & mut Lines<Br>, mut line_count: usize
+  ) -> Res<(Self, usize)> {
     use consts::dump::* ;
 
     let name = if let Some(line) = lines.next() {
+      line_count += 1 ;
       let line = line ? ;
       let len = cmt_pref.len() ;
       if line.len() < len + 1 || & line[0..len] != & * cmt_pref {
@@ -379,6 +388,7 @@ impl ToolConf {
       bail!( format!("expected tool name, found nothing") )
     } ;
     let short = if let Some(line) = lines.next() {
+      line_count += 1 ;
       let line = line ? ;
       let len = short_name_key.len() ;
       if line.len() < len + 1 || & line[0..len] != * short_name_key {
@@ -395,6 +405,7 @@ impl ToolConf {
       bail!( format!("expected tool ({}) short name, found nothing", name) )
     } ;
     let graph = if let Some(line) = lines.next() {
+      line_count += 1 ;
       let line = line ? ;
       let len = graph_name_key.len() ;
       if line.len() < len + 1 || & line[0..len] != * graph_name_key {
@@ -411,6 +422,7 @@ impl ToolConf {
       bail!( format!("expected tool ({}) graph name, found nothing", name) )
     } ;
     let cmd = if let Some(line) = lines.next() {
+      line_count += 1 ;
       let line = line ? ;
       let len = cmd_key.len() ;
       if line.len() < len + 1 || & line[0..len] != * cmd_key {
@@ -447,7 +459,9 @@ impl ToolConf {
       bail!( format!("expected tool ({}) cmd, found nothing", name) )
     } ;
     
-    Ok( ToolConf { name, short, graph, cmd, validator: None } )
+    Ok( (
+      ToolConf { name, short, graph, cmd, validator: None }, line_count
+    ) )
   }
 }
 
@@ -462,7 +476,7 @@ impl ToolConf {
 /// The index of a tool, just a usize.
 ///
 /// Can **only** be created by a `ToolRange`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ToolIndex {
   /// The index.
   n: usize,
@@ -835,6 +849,10 @@ impl<T> ToolVec<T> {
   pub fn with_capacity(n: usize) -> Self {
     ToolVec { vec: Vec::with_capacity(n) }
   }
+  /// Clears the vector.
+  pub fn into_iter(self) -> ::std::vec::IntoIter<T> {
+    self.vec.into_iter()
+  }
   /// Push.
   #[inline]
   pub fn push(& mut self, elem: T) {
@@ -855,6 +873,11 @@ impl<T> Index<ToolIndex> for ToolVec<T> {
 impl<T> IndexMut<ToolIndex> for ToolVec<T> {
   fn index_mut(& mut self, index: ToolIndex) -> & mut T {
     & mut self.vec[* index]
+  }
+}
+impl<T> FromIterator<T> for ToolVec<T> {
+  fn from_iter< Iter: IntoIterator<Item = T> >(iter: Iter) -> Self {
+    ToolVec { vec: iter.into_iter().collect() }
   }
 }
 
@@ -945,6 +968,24 @@ impl DurationExt for Duration {
     )
   }
 }
+
+
+// /// Extends `io`'s `Line`.
+// pub trait LinesExt {
+//   /// Returns the next line that's not a comment.
+//   fn non_cmt_next(& mut self) -> Option< Result<String> > ;
+// }
+// impl<Br: BufRead> LinesExt for ::std::io::Lines<Br> {
+//   fn non_cmt_next(& mut self) -> Option< Result<String> > {
+//     while let Some(line_res) = self.next() {
+//       let line = line_res ? ;
+//       if ::consts::dump::empty_cmt_re.is_match(& line) {
+//         Some( Ok(line) )
+//       }
+//     }
+//     None
+//   }
+// }
 
 
 
@@ -1081,3 +1122,10 @@ pub fn example_conf_file(conf: & GConf, file: String) -> Res<()> {
   }
   Ok(())
 }
+
+
+/// The optional exit code of a tool run.
+pub type ExitCode = Option<i32> ;
+
+/// Type returned by a `channel` function: a sender and a receiver.
+pub type Channel<T> = (Sender<T>, Receiver<T>) ;

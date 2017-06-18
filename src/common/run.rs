@@ -30,6 +30,11 @@ impl ValdConf {
     ValdConf { succ: HashMap::new() }
   }
 
+  /// Info of an exit code.
+  pub fn get(& self, code: i32) -> Option<& ValdCode> {
+    self.succ.get(& code)
+  }
+
   /// Adds a new success validation code.
   pub fn add_succ(mut self, code: i32, info: ValdCode) -> Res<Self> {
     if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {

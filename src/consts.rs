@@ -111,6 +111,9 @@ pub mod dump {
 
   #[test]
   fn regexes() {
+    assert!( empty_cmt_line.is_match("#") ) ;
+    assert!( empty_cmt_line.is_match("#    ") ) ;
+
     let res = name_re.captures("# tool-Name 71").unwrap() ;
     assert_eq!(& res["name"], "tool-Name 71") ;
 
@@ -149,13 +152,20 @@ pub mod dump {
       "{} timeout: ", cmt_pref
     ) ;
 
+    #[doc = "Matches an empty comment line."]
+    pub static ref empty_cmt_line: Regex = Regex::new(
+      & format!("{}\\s*", cmt_pref)
+    ).expect(
+      "problem in `comment_re` static regex"
+    ) ;
+
     #[doc = "Matches the name of tool from a dump."]
     pub static ref name_re: Regex = Regex::new(
       & format!(
         r"^{}\s*(?P<name>[a-zA-Z][a-zA-Z0-9\s-_]*)$", & * cmt_pref
       )
     ).expect(
-      "problem in `name` static regex"
+      "problem in `name_re` static regex"
     ) ;
     #[doc = "Matches the short name of a tool from a dump as `short`."]
     pub static ref short_name_re: Regex = Regex::new(
@@ -163,7 +173,7 @@ pub mod dump {
         r"^{}\s*(?P<short>[a-zA-Z][a-zA-Z0-9-_]*)$", & * short_name_key
       )
     ).expect(
-      "problem in `short_name` static regex"
+      "problem in `short_name_re` static regex"
     ) ;
     #[doc = "Matches the graph name of a tool from a dump as `graph`."]
     pub static ref graph_name_re: Regex = Regex::new(
@@ -171,13 +181,13 @@ pub mod dump {
         r"^{}\s*(?P<graph>[a-zA-Z][a-zA-Z0-9\s-_]*)$", & * graph_name_key
       )
     ).expect(
-      "problem in `graph_name` static regex"
+      "problem in `graph_name_re` static regex"
     ) ;
     #[doc = "Matches the command of a tool from a dump as `cmd`."]
     pub static ref cmd_re: Regex = Regex::new(
       & format!(r"^{}\s*(?P<cmd>.*)$", & * cmd_key)
     ).expect(
-      "problem in `cmd` static regex"
+      "problem in `cmd_re` static regex"
     ) ;
     #[doc = "
 Matches the timeout of a dump.
