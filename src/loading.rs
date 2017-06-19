@@ -85,6 +85,8 @@ pub struct ToolData<T> {
   pub file: String,
   /// Sorted anonymous successes containing only the runtime in micros.
   pub res: T,
+  /// Validator configuration.
+  pub vald_conf: ValdConf,
 }
 impl<T> ToolData<T> {
   /// Creates a tool data from a file.
@@ -94,9 +96,7 @@ impl<T> ToolData<T> {
     F: Fn(
       Vec<(BenchIndex, Data)>, Duration
     ) -> Res<T>
-  >(
-    conf: & PlotConf, path: P, treatment: F
-  ) -> Res<Self> {
+  >(conf: & PlotConf, path: P, treatment: F) -> Res<Self> {
     let file = ::std::fs::OpenOptions::new().read(true).open(& path).chain_err(
       || format!(
         "while opening data file `{}`", conf.sad(
@@ -107,7 +107,7 @@ impl<T> ToolData<T> {
       )
     ) ? ;
     let reader = BufReader::new(file) ;
-    let mut lines = reader.lines() ;
+    let mut lines = LinesIter::mk( reader.lines() ) ;
     let (tool, mut line_cnt) = ToolConf::from_dump(& mut lines, 0).chain_err(
       || format!(
         "while loading data file `{}`", conf.sad(
@@ -137,6 +137,9 @@ impl<T> ToolData<T> {
       }
     ) ? ;
     line_cnt += 1 ;
+
+    // Parse validators, if any.
+    let vald_conf = ValdConf::empty() ;
 
     let mut vec: Vec<(BenchIndex, _)> = Vec::with_capacity(100) ;
     'lines: for line in lines {
@@ -192,7 +195,8 @@ impl<T> ToolData<T> {
 
     Ok(
       ToolData {
-        tool, timeout, file: data_file, res: treatment(vec, timeout)?
+        tool, timeout, file: data_file,
+        res: treatment(vec, timeout)?, vald_conf
       }
     )
   }
@@ -256,6 +260,7 @@ impl ToolData<
           timeout: data.timeout,
           file: data.file,
           res: (time_1, time_2, map),
+          vald_conf: data.vald_conf,
         } ;
         (data, max)
       }

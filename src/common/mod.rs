@@ -113,6 +113,105 @@ pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
   path.exists() && path.is_file()
 }
 
+
+
+
+
+
+/// Validation code info.
+#[derive(Debug, Clone)]
+pub struct ValdCode {
+  /// Alias.
+  pub alias: String,
+  /// Description.
+  pub desc: String,
+  /// Color (optional).
+  pub color: Option<String>,
+}
+
+
+
+
+/// Validator configuration.
+#[derive(Debug, Clone)]
+pub struct ValdConf {
+  /// Success codes.
+  succ: HashMap<i32, ValdCode>,
+}
+impl ValdConf {
+  /// Creates an empty validator configuration.
+  pub fn empty() -> Self {
+    ValdConf { succ: HashMap::new() }
+  }
+  /// Info of an exit code.
+  pub fn get(& self, code: i32) -> Option<& ValdCode> {
+    self.succ.get(& code)
+  }
+
+  /// Adds a new success validation code.
+  pub fn add_succ(mut self, code: i32, info: ValdCode) -> Res<Self> {
+    if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {
+      Err(
+        format!(
+          "code `{}` is already registered as success `{}`", code, desc
+        ).into()
+      )
+    } else {
+      Ok(self)
+    }
+  }
+  /// Dumps itself to a writer.
+  pub fn dump<W: Write>(& self, w: & mut W) -> Res<()> {
+    for (code, info) in & self.succ {
+      write!(
+        w, "# success: {}, {}, {}\n",
+        code, info.alias, info.desc
+      ).chain_err(
+        || "while dumping validator information"
+      ) ?
+    }
+    Ok(())
+  }
+
+  // /// Parses a validation configuration from a dump.
+  // pub fn of_dump<B: BufRead>(lines: LinesIter<B>) -> Res<Self> {
+    
+  // }
+}
+/// Validator configuration extensions.
+pub trait ValdConfExt {
+  /// Accessor.
+  fn vald_conf(& self) -> & ValdConf ;
+
+  /// Checks whether an exit status is a success.
+  ///
+  /// Returns true if no success code is registered and `status.success()`, or
+  /// the status is `Some(code)` and `code` is registered as a success.
+  fn check_succ(& self, status: & ExitStatus) -> bool {
+    let vald_conf = self.vald_conf() ;
+    if vald_conf.succ.is_empty() {
+      status.success()
+    } else if let Some(code) = status.code() {
+      vald_conf.succ.get(& code).is_some()
+    } else {
+      false
+    }
+  }
+
+  /// Iterator over the success codes declared.
+  fn validators_iter(& self) -> ::std::collections::hash_map::Iter<
+    i32, ValdCode
+  > {
+    self.vald_conf().succ.iter()
+  }
+}
+impl ValdConfExt for ValdConf {
+  fn vald_conf(& self) -> & ValdConf { self }
+}
+
+
+
+
 /// Clap result.
 pub enum Clap {
   /// Run mode.
@@ -366,7 +465,7 @@ impl ToolConf {
   }
   /// Loads a tool configuration from a dump. Returns the number of lines read.
   pub fn from_dump<Br: BufRead>(
-    lines: & mut Lines<Br>, mut line_count: usize
+    lines: & mut LinesIter<Br>, mut line_count: usize
   ) -> Res<(Self, usize)> {
     use consts::dump::* ;
 
@@ -1129,3 +1228,33 @@ pub type ExitCode = Option<i32> ;
 
 /// Type returned by a `channel` function: a sender and a receiver.
 pub type Channel<T> = (Sender<T>, Receiver<T>) ;
+
+
+/// Line iterator buffer.
+pub struct LinesIter<B> {
+  /// Actual lines.
+  lines: Lines<B>,
+  /// Buffer that can be pushed to.
+  vec: Vec<String>,
+}
+impl<B> LinesIter<B> {
+  /// Creates a line iterator.
+  pub fn mk(lines: Lines<B>) -> Self {
+    LinesIter { lines, vec: vec![] }
+  }
+
+  /// Pushes a line.
+  pub fn push(& mut self, line: String) {
+    self.vec.push(line)
+  }
+}
+impl<B: ::std::io::BufRead> Iterator for LinesIter<B> {
+  type Item = ::std::io::Result<String> ;
+  fn next(& mut self) -> Option< ::std::io::Result<String> > {
+    if let Some(line) = self.vec.pop() {
+      Some( Ok(line) )
+    } else {
+      self.lines.next()
+    }
+  }
+}

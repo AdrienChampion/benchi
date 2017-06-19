@@ -151,6 +151,10 @@ pub mod dump {
     pub static ref timeout_key: String = format!(
       "{} timeout: ", cmt_pref
     ) ;
+    #[doc = "Key for validators."]
+    pub static ref vald_key: String = format!(
+      "{} success: ", cmt_pref
+    ) ;
 
     #[doc = "Matches an empty comment line."]
     pub static ref empty_cmt_line: Regex = Regex::new(
@@ -201,6 +205,19 @@ Two groups:
       & format!(r"^{}\s*{}$", & * timeout_key, & * ::consts::time_re)
     ).expect(
       "problem in `timeout` static regex"
+    ) ;
+    #[doc = "Matches a validator as `code`, `alias` and `desc`."]
+    pub static ref vald_re: Regex = Regex::new(
+      & format!(
+        r"(?x)^
+          {}\s*success\s*:\s*
+          (?P<code>[0-9][0-9]*|\-[0-9][0-9]*)\s*,\s*
+          (?P<alias>[a-zA-Z][a-zA-Z0-9_\-.]*)\s*,\s*
+          (?P<desc>.*)
+        $"
+      , & * vald_key)
+    ).expect(
+      "problem in `vald_re` static regex"
     ) ;
 
   }
