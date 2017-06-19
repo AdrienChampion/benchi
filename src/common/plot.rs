@@ -30,7 +30,7 @@ impl PlotConf {
     file: String, pdf: bool, then: Option<String>,
     fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
     gconf: GConf
-  ) -> Self {
+  ) -> Res<Self> {
     use std::process::{ Command, Stdio } ;
     let pdf = if pdf {
       let status = Command::new(
@@ -54,7 +54,26 @@ impl PlotConf {
       }
     } else { false } ;
     let file = file.path_subst() ;
-    PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
+    let (fmt, file) = {
+      if let Some(s) = Path::new( & file.clone() ).extension() {
+        match & s.to_string_lossy().into_owned() as & str {
+          "plot" => (fmt, file),
+          ref s => {
+            let mut path = PathBuf::from(file) ;
+            path.set_extension("plot") ;
+            let fmt = if let Some(fmt) = PlotFmt::of_str(s) { fmt } else {
+              bail!( format!("unrecognized plot extension `{}`", s) )
+            } ;
+            (fmt, path.to_string_lossy().to_string())
+          },
+        }
+      } else {
+        (fmt, format!("{}.plot", file))
+      }
+    } ;
+    Ok(
+      PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
+    )
   }
 }
 
@@ -110,10 +129,10 @@ impl PlotFmt {
   /// Plot format of a string. Update `Self::values` if you change this.
   pub fn of_str(s: & str) -> Option<Self> {
     match s {
-      "pdf" => Some(PlotFmt::Pdf),
-      "svg" => Some(PlotFmt::Svg),
-      "png" => Some(PlotFmt::Png),
-      "tex" => Some(PlotFmt::Tex),
+      "pdf" | "PDF" => Some(PlotFmt::Pdf),
+      "svg" | "SVG" => Some(PlotFmt::Svg),
+      "png" | "PNG" => Some(PlotFmt::Png),
+      "tex" | "TEX" => Some(PlotFmt::Tex),
       _ => None,
     }
   }
@@ -199,7 +218,7 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
   ).setting( AppSettings::SubcommandRequired ).arg(
     Arg::with_name("then").long("--then").help(
       "\
-Specifies a command to run on the pdf generated (ignored if `--pdf off`)\
+Specifies a command to run on the pdf generated (ignored if `--run_gp off`)\
       "
     ).value_name("command").takes_value(true)
   ).arg(
@@ -230,7 +249,12 @@ Consider errors as timeouts\
     Arg::with_name("gp_fmt").long("--to").help(
       "\
 Specifies the format the plot should generate (latex format is a bit
-experimental for now)\
+experimental for now).
+Alternatively the extension can be set on the <PLOT_FILE>:
+  // Sets `--to` to pdf:
+  benchi plot my_plot.pdf ...
+  // Sets `--to` to svg:
+  benchi plot my_plot.svg ...\
       "
     ).default_value("pdf").takes_value(true).validator(
       PlotFmt::validator
@@ -298,9 +322,12 @@ pub fn plot_clap<'a>(
       plot_matches.value_of("then").map(|s| s.to_string())
     } else { None } ;
 
-    let plot_conf = PlotConf::mk(
+    let plot_conf = match PlotConf::mk(
       file, run_gp, cmd, fmt, no_errors, errs_as_tmo, conf
-    ) ;
+    ) {
+      Ok(conf) => conf,
+      Err(e) => return Some( Err(e) ),
+    } ;
 
     if let Some(cumul_matches) = plot_matches.subcommand_matches("cumul") {
       Some(
