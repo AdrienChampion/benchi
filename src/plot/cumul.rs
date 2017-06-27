@@ -5,41 +5,74 @@ use std::iter::Iterator ;
 use common::* ;
 use common::plot::* ;
 use errors::* ;
-use loading::ToolData ;
 
 
 /// Generates the cumulative plot between several tools.
 pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
-  log!{
-    conf =>
-      "Generating cumulative plot for {} tools...", files.len() ; {
-        log!{
-          conf, verb => "  loading {} data files...", files.len()
-        }
-      }
+  
+  log!{ conf => "Loading tool data..." }
+  let mut run_res = ::common::res::RunRes::of_files( files.clone() ) ? ;
+  
+  if conf.no_errors {
+    let dropped = run_res.rm_errs() ;
+    log!{
+      conf =>
+        "  dropped {} benchmark{} for which one tool \
+        or more failed (--no_errs on).",
+        dropped, if dropped == 1 {""} else {"s"}
+    }
+  } else if conf.errs_as_tmos {
+    let changed = run_res.errs_as_tmos() ;
+    log!{
+      conf =>
+        "  changed {} error result{} to timeout{} (--errs_as_tmos on).",
+        changed,
+        if changed == 1 {""} else {"s"}, if changed == 1 {""} else {"s"}
+    }
   }
 
-  let mut tool_data = Vec::with_capacity( files.len() ) ;
+  log!{
+    conf =>
+      "Generating cumulative plot for {} tools...", files.len()
+  }
+
+  let mut tool_data = Vec::with_capacity( run_res.tools.len() ) ;
   let mut empty_data = vec![] ;
   let mut bench_count = 0 ;
-  for file in & files {
-    let data = ToolData::cumul_of_file(conf, & file).chain_err(
-      || format!(
-        "while preparing for cumulative plot generation for `{}`", file
-      )
-    ) ? ;
-    bench_count = ::std::cmp::max( bench_count, data.res.len() ) ;
-    if ! data.res.is_empty() {
-      tool_data.push(data)
-    } else {
+
+  for tool_res in & run_res.tools {
+    let count = tool_res.write_cumul(conf) ? ;
+    if count == 0 {
       warn!(
         conf =>
           "ignoring data for `{}`: everything is timeout or error",
-          conf.sad(& data.tool.name)
+          conf.sad(& tool_res.tool.name)
       ) ;
-      empty_data.push(data)
+      empty_data.push(tool_res)
+    } else {
+      bench_count = ::std::cmp::max(bench_count, count) ;
+      tool_data.push(tool_res)
     }
   }
+
+  // for file in & files {
+  //   let data = ToolData::cumul_of_file(conf, & file).chain_err(
+  //     || format!(
+  //       "while preparing for cumulative plot generation for `{}`", file
+  //     )
+  //   ) ? ;
+  //   bench_count = ::std::cmp::max( bench_count, data.res.len() ) ;
+  //   if ! data.res.is_empty() {
+  //     tool_data.push(data)
+  //   } else {
+  //     warn!(
+  //       conf =>
+  //         "ignoring data for `{}`: everything is timeout or error",
+  //         conf.sad(& data.tool.name)
+  //     ) ;
+  //     empty_data.push(data)
+  //   }
+  // }
 
   if tool_data.is_empty() {
     warn!(
@@ -52,15 +85,6 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     warn!(
       conf => "only 16 colors defined, plot might fail"
     )
-  }
-
-  let mut _max_total_time = Duration::zero() ;
-  // Cannot fail if the checks above are not changed.
-  let mut _min_time = tool_data[0].res[0] ;
-  for data in & tool_data {
-    let (total_time, min) = data.cumul_write(conf) ? ;
-    _max_total_time = ::std::cmp::max(_max_total_time, total_time) ;
-    _min_time = ::std::cmp::min(_min_time, min)
   }
 
   log!{ conf, verb => "  writing plot file `{}`...", conf.emph(& conf.file) }
@@ -119,11 +143,13 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
 
   let mut data_iter = (1..).zip( tool_data.iter() ) ;
 
-  if let Some( (index, data) ) = data_iter.next() {
+  if let Some( (index, tool_res) ) = data_iter.next() {
+    let data_file = conf.data_file_path_of(& tool_res.tool) ? ;
     file.write_all(
       format!(
         "  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
-        data.file, index, data.tool.graph, data.res.len()
+        data_file.to_string_lossy(), index,
+        tool_res.tool.graph, tool_res.success_count()
       ).as_bytes()
     ).chain_err(
       || format!(
@@ -131,11 +157,13 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       )
     ) ? ;
 
-    for (index, data) in data_iter {
+    for (index, tool_res) in data_iter {
+      let data_file = conf.data_file_path_of(& tool_res.tool) ? ;
       file.write_all(
         format!(
           ", \\\n  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
-          data.file, index, data.tool.graph, data.res.len()
+          data_file.to_string_lossy(), index,
+          tool_res.tool.graph, tool_res.success_count()
         ).as_bytes()
       ).chain_err(
         || format!(

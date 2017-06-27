@@ -1,9 +1,4 @@
-/*! `benchi` runs benchmarks.
-
-# TODO
-
-- clean `run/mod.rs`: introduce enum for run outcome
-*/
+//! `benchi` runs benchmarks.
 
 #![forbid(missing_docs)]
 #![allow(non_upper_case_globals)]
@@ -171,7 +166,7 @@ fn main() {
           conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
           {
             if let Some(max) = conf.try {
-              log!{ conf, verb => "        try: {}", max }
+              log!{ conf, verb => "               try: {}", max }
             }
           }
           ""

@@ -53,7 +53,7 @@ impl RunConf {
     }
   }
 
-  /// Name of the validator for some benchmark.
+  /// Name of the validator for some tool.
   #[inline]
   pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
     if tool.validator.is_none() {
@@ -64,6 +64,14 @@ impl RunConf {
       path.push("validator") ;
       path.set_extension("sh") ;
       Some(path)
+    }
+  }
+  /// Relative path of the validator of a tool.
+  pub fn rel_validator_path_of(tool: & ToolConf) -> Option<String> {
+    if tool.validator.is_some() {
+      Some( format!("{}/validator.sh", tool.short) )
+    } else {
+      None
     }
   }
 }
@@ -133,29 +141,39 @@ sequentially\
   ).arg(
     Arg::with_name("out_dir").short("-o").long("--out_dir").help(
       "Sets the output directory"
-    ).value_name("dir").default_value("<today>_at_<now>").takes_value(true)
+    ).value_name("dir").default_value("<today>_at_<now>").takes_value(
+      true
+    ).number_of_values(1)
   ).arg(
     Arg::with_name("timeout").short("-t").long("--timeout").help(
       "Sets the timeout for each run"
     ).value_name(::consts::clap::tmo_format).validator(
       tmo_validator
-    ).default_value("1min").takes_value(true)
+    ).default_value("1min").takes_value(
+      true
+    ).number_of_values(1)
   ).arg(
     Arg::with_name("para_benchs").long("--benchs").help(
       "Number of benchmarks to run in parallel"
-    ).value_name("int").default_value("1").takes_value(true).validator(
+    ).value_name("int").default_value("1").takes_value(
+      true
+    ).number_of_values(1).validator(
       int_validator
     )
   ).arg(
     Arg::with_name("para_tools").long("--tools").help(
       "Number of tools to run in parallel on each benchmark"
-    ).value_name("int").default_value("1").takes_value(true).validator(
+    ).value_name("int").default_value("1").takes_value(
+      true
+    ).number_of_values(1).validator(
       int_validator
     )
   ).arg(
     Arg::with_name("try").long("--try").help(
       "Only runs on `n` benchmarks (to try the set up)"
-    ).value_name("int").takes_value(true).validator(
+    ).value_name("int").takes_value(
+      true
+    ).number_of_values(1).validator(
       int_validator
     )
   ).arg(
@@ -163,7 +181,9 @@ sequentially\
       "\
 (De)activates stdout logging of the tools.\
       "
-    ).default_value("on").takes_value(true).validator(
+    ).default_value("on").takes_value(
+      true
+    ).number_of_values(1).validator(
       bool_validator
     ).value_name(bool_format)
   ).arg(
@@ -188,7 +208,6 @@ specified in the configuration file.\
 pub fn run_clap<'a>(
   matches: & ::clap::Matches<'a>
 ) -> Option< Res<Clap> > {
-  use std::str::FromStr ;
   use clap::utils::* ;
 
   // Retrieve configuration file path if in run mode. Early return otherwise.

@@ -1,79 +1,10 @@
 //! Types to load and process bench results.
 
 use common::* ;
+use common::res::* ;
 use common::plot::* ;
 use errors::* ;
 use consts::data::* ;
-
-/// Duration from a success regex match.
-fn duration_of_time_re<'a>(caps: ::regex::Captures<'a>) -> Res<Duration> {
-  use std::str::FromStr ;
-  u64::from_str( & caps["secs"] ).and_then(
-    |secs| u32::from_str( & caps["nanos"] ).map(
-      |nanos| Duration::new(secs, nanos)
-    )
-  ).chain_err(
-    || format!("while parsing time string")
-  )
-}
-
-/// Validation code.
-pub type Validation = isize ;
-
-/// Result of a tool running on a benchmark.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Data {
-  /// Success with a time and an optional validation code.
-  Success( Duration, Option<Validation> ),
-  /// Timeout.
-  Timeout,
-  /// Error.
-  Error,
-}
-impl Data {
-  /// Parses a string. Error on regex match but conversion fail. None if no
-  /// regex match.
-  pub fn of_str(
-    s: & str, validation: Option<Validation>
-  ) -> Res< Option<Data> > {
-    if let Some(caps) = success_re.captures(s) {
-      duration_of_time_re(caps).map(
-        |val| Some( Data::Success(val, validation) )
-      )
-    } else if timeout_re.is_match(s) {
-      Ok( Some( Data::Timeout ) )
-    } else if error_re.is_match(s) {
-      Ok( Some(Data::Error) )
-    } else {
-      Ok(None)
-    }
-  }
-
-  /// Map over the different types of data.
-  pub fn map<
-    T,
-    FSucc: FnOnce(Duration, Option<Validation>) -> T,
-    FTmo: FnOnce() -> T, FErr: FnOnce() -> T,
-  >(& self, f_succ: FSucc, f_tmo: FTmo, f_err: FErr) -> T {
-    match * self {
-      Data::Success(time, vald) => f_succ(time, vald),
-      Data::Timeout => f_tmo(),
-      Data::Error => f_err(),
-    }
-  }
-
-  /// True if `self` is an error.
-  pub fn is_err(& self) -> bool {
-    * self == Data::Error
-  }
-  /// True if `self` is a timeout.
-  pub fn is_tmo(& self) -> bool {
-    match * self {
-      Data::Timeout => true,
-      _ => false
-    }
-  }
-}
 
 /// The results for a tool.
 pub struct ToolData<T> {
@@ -94,7 +25,7 @@ impl<T> ToolData<T> {
   fn polymorphic_of_file<
     P: AsRef<Path>,
     F: Fn(
-      Vec<(BenchIndex, Data)>, Duration
+      Vec<(BenchIndex, BenchRes)>, Duration
     ) -> Res<T>
   >(conf: & PlotConf, path: P, treatment: F) -> Res<Self> {
     let file = ::std::fs::OpenOptions::new().read(true).open(& path).chain_err(
@@ -107,7 +38,7 @@ impl<T> ToolData<T> {
       )
     ) ? ;
     let reader = BufReader::new(file) ;
-    let mut lines = LinesIter::mk( reader.lines() ) ;
+    let mut lines = LinesIter::mk( reader ) ;
     let (tool, mut line_cnt) = ToolConf::from_dump(& mut lines, 0).chain_err(
       || format!(
         "while loading data file `{}`", conf.sad(
@@ -143,7 +74,6 @@ impl<T> ToolData<T> {
 
     let mut vec: Vec<(BenchIndex, _)> = Vec::with_capacity(100) ;
     'lines: for line in lines {
-      use std::str::FromStr ;
       line_cnt += 1 ;
       let line = line.chain_err(
         || format!("while reading data file for `{}`", conf.sad(& tool.name))
@@ -162,7 +92,7 @@ impl<T> ToolData<T> {
             ) ?
           ),
         } ;
-        if let Some(data) = Data::of_str( data, vald ) ? {
+        if let Some(data) = BenchRes::of_str( data, vald ) ? {
           vec.push( (uid.into(), data) )
         } else {
           bail!(
@@ -203,7 +133,7 @@ impl<T> ToolData<T> {
 }
 
 impl ToolData<
-  ( Duration, Duration, HashMap<BenchIndex, Data> )
+  ( Duration, Duration, HashMap<BenchIndex, BenchRes> )
 > {
   /// Creates a tool data for a comparative plot from a file. Returns the max
   /// bench index plus one, zero if there was no bench.
@@ -225,7 +155,7 @@ impl ToolData<
             )
           ) ;
           match & data {
-            & Data::Success(time, _) => {
+            & BenchRes::Success(time, _) => {
               max_time = ::std::cmp::max(max_time, time) ;
               min_time = Some(
                 ::std::cmp::min(
@@ -233,7 +163,7 @@ impl ToolData<
                 )
               )
             }
-            & Data::Timeout => tmo = Some(timeout),
+            & BenchRes::Timeout => tmo = Some(timeout),
             _ => (),
           }
           let was_there = map.insert(bench, data) ;
@@ -293,7 +223,7 @@ impl ToolData<
 
   /// Gets something from the map.
   #[inline]
-  pub fn get(& self, index: BenchIndex) -> Option<& Data> {
+  pub fn get(& self, index: BenchIndex) -> Option<& BenchRes> {
     self.res.2.get(& index)
   }
 }
@@ -308,7 +238,7 @@ impl ToolData< Vec<Duration> > {
       conf, path, |vec, _| {
         let mut res = Vec::with_capacity( vec.len() ) ;
         for (_, data) in vec {
-          if let Data::Success(time, _) = data {
+          if let BenchRes::Success(time, _) = data {
             res.push(time)
           }
         }

@@ -3,9 +3,11 @@
 use std::fmt ;
 use std::ops::{ Index, IndexMut, Deref } ;
 
+
+pub use std::str::FromStr ;
 pub use std::process::{ Command, ExitStatus } ;
 pub use std::fs::File ;
-pub use std::io::{ Lines, Write, BufRead, BufReader } ;
+pub use std::io::{ Lines, Read, Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
 pub use std::path::{ Path, PathBuf } ;
 pub use std::iter::{ Iterator, FromIterator } ;
@@ -91,6 +93,7 @@ macro_rules! warn {
   )
 }
 
+pub mod res ;
 pub mod run ;
 use common::run::* ;
 pub mod plot ;
@@ -119,7 +122,7 @@ pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
 
 
 /// Validation code info.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValdCode {
   /// Alias.
   pub alias: String,
@@ -133,12 +136,16 @@ pub struct ValdCode {
 
 
 /// Validator configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValdConf {
   /// Success codes.
   succ: HashMap<i32, ValdCode>,
 }
 impl ValdConf {
+  /// True if the valdconf is empty.
+  pub fn is_empty(& self) -> bool {
+    self.succ.is_empty()
+  }
   /// Creates an empty validator configuration.
   pub fn empty() -> Self {
     ValdConf { succ: HashMap::new() }
@@ -447,20 +454,85 @@ pub struct ToolConf {
 unsafe impl Sync for ToolConf {}
 impl ToolConf {
   /// Dumps info to a writer.
+  pub fn new_dump_info<W: Write>(
+    & self, conf: & Arc<RunConf>, w: & mut W
+  ) -> ::std::io::Result<()> {
+    use consts::dump::* ;
+
+    writeln!(w, "{} {{", self.name) ? ;
+    writeln!(
+      w, "  {}: {}", new_short_name_key, self.short
+    ) ? ;
+    writeln!(
+      w, "  {}: {}", new_graph_name_key, self.graph
+    ) ? ;
+    write!(  w, "  {}: \"", new_cmd_key) ? ;
+    let mut iter = self.cmd.iter() ;
+    if let Some(s) = iter.next() {
+      write!(w, "{}", s) ? ;
+      for s in iter {
+        write!(w, " {}", s) ?
+      }
+    }
+    writeln!(w, "\"") ? ;
+    if let Some(path) = conf.validator_path_of(& self) {
+      writeln!(w, "  {}: ```", new_vald_file_key) ? ;
+      let file = ::std::fs::OpenOptions::new().read(true).open(& path) ? ;
+      for line in BufReader::new(file).lines() {
+        writeln!(w, "{}", line ?) ?
+      }
+      writeln!(w, "  ```") ? ;
+    }
+    writeln!(w, "}}") ? ;
+
+    if ! conf.vald_conf().is_empty() {
+      writeln!(w, "validators {{") ? ;
+      for (code, info) in conf.validators_iter() {
+        writeln!(w, "  success: {}, {}, {}", code, info.alias, info.desc) ?
+      }
+      writeln!(w, "}}") ? ;
+    }
+
+    writeln!(
+      w, "{}: {}", new_timeout_key, conf.timeout.as_sec_str()
+    ) ? ;
+    writeln!(w, "{}", & * cmt_pref)
+  }
+
+
+  /// Dumps info to a writer.
   pub fn dump_info<W: Write>(
     & self, timeout: & Duration, w: & mut W
   ) -> ::std::io::Result<()> {
     use consts::dump::* ;
 
-    writeln!(w, "{} {}", & * cmt_pref, self.name) ? ;
-    writeln!(w, "{}{}", * short_name_key, self.short) ? ;
-    writeln!(w, "{}{}", * graph_name_key, self.graph) ? ;
-    write!(  w, "{}", * cmd_key) ? ;
-    for s in & self.cmd {
-      write!(w, "{} ", s) ?
+    writeln!(w, "{} {}", & * dmp_pref, self.name) ? ;
+    writeln!(
+      w, "{} {}: {}", & * dmp_pref, new_short_name_key, self.short
+    ) ? ;
+    writeln!(
+      w, "{} {}: {}", & * dmp_pref, new_graph_name_key, self.graph
+    ) ? ;
+    write!(  w, "{} {}: \"", & * dmp_pref, new_cmd_key) ? ;
+    let mut iter = self.cmd.iter() ;
+    if let Some(s) = iter.next() {
+      write!(w, "{}", s) ? ;
+      for s in iter {
+        write!(w, " {}", s) ?
+      }
     }
-    writeln!(w, "") ? ;
-    writeln!(w, "{}{}", * timeout_key, timeout.as_sec_str()) ? ;
+    writeln!(w, "\"") ? ;
+    write!(
+      w, "{} {}: ", & * dmp_pref, new_vald_file_key
+    ) ? ;
+    if let Some(path) = RunConf::rel_validator_path_of( & self ) {
+      writeln!(w, "{}", path) ?
+    } else {
+      writeln!(w, "_") ?
+    }
+    writeln!(
+      w, "{} {}: {}", & * dmp_pref, new_timeout_key, timeout.as_sec_str()
+    ) ? ;
     writeln!(w, "{}", & * cmt_pref)
   }
   /// Loads a tool configuration from a dump. Returns the number of lines read.
@@ -777,11 +849,12 @@ impl Instance {
       )
     )
   }
-  /// Initializes the data file for some tool.
+  /// Initializes the data file and the validator for some tool.
   #[inline]
-  pub fn init_data_file(
+  pub fn init_data_file_and_validator(
     & self, conf: & Arc<RunConf>, tool: ToolIndex
   ) -> Res<File> {
+    self.init_validator(conf, tool) ? ;
     let mut path = PathBuf::new() ;
     path.push(& conf.out_dir) ;
     path.push(& self[tool].short) ;
@@ -797,7 +870,7 @@ impl Instance {
         conf.emph( & self[tool].name )
       )
     ) ? ;
-    self[tool].dump_info(& conf.timeout, & mut tool_file).chain_err(
+    self[tool].new_dump_info(conf, & mut tool_file).chain_err(
       || format!(
         "while dumping info for tool `{}`",
         conf.emph( & self[tool].name )
@@ -870,11 +943,8 @@ impl Instance {
       } ;
 
       // Data file.
-      let tool_file = self.init_data_file(& conf, tool) ? ;
+      let tool_file = self.init_data_file_and_validator(& conf, tool) ? ;
       tool_files.push( tool_file ) ;
-
-      // Validator.
-      self.init_validator(conf, tool) ? ;
 
       // Folding.
       fold_fun(& mut fold_data, & self[tool])
@@ -1230,31 +1300,63 @@ pub type ExitCode = Option<i32> ;
 pub type Channel<T> = (Sender<T>, Receiver<T>) ;
 
 
-/// Line iterator buffer.
+/// Line iterator buffer over a file.
+pub type FileLiter = LinesIter< BufReader<File> > ;
+
+/// Line iterator buffer. Counts lines.
+///
+/// Pushing lines that were not already there is a logical error and can cause
+/// an underflow of the line counter.
 pub struct LinesIter<B> {
   /// Actual lines.
   lines: Lines<B>,
   /// Buffer that can be pushed to.
   vec: Vec<String>,
+  /// Line counter.
+  line_count: usize,
 }
-impl<B> LinesIter<B> {
+impl<B: BufRead> LinesIter<B> {
   /// Creates a line iterator.
-  pub fn mk(lines: Lines<B>) -> Self {
-    LinesIter { lines, vec: vec![] }
+  pub fn mk(buf_read: B) -> Self {
+    LinesIter { lines: buf_read.lines(), vec: vec![], line_count: 0 }
   }
+
+  /// Index of the **last line** popped.
+  pub fn last_line_index(& self) -> usize {
+    self.line_count
+  }
+
+  // /// Checks if there is a next line.
+  // pub fn has_next(& self) -> bool {
+  //   if self.vec.is_empty() {
+  //     if let Some(line) = self.lines.next() {
+  //       self.vec.push(line) ;
+  //       true
+  //     } else {
+  //       false
+  //     }
+  //   } else {
+  //     true
+  //   }
+  // }
 
   /// Pushes a line.
   pub fn push(& mut self, line: String) {
+    self.line_count += 1 ;
     self.vec.push(line)
   }
 }
 impl<B: ::std::io::BufRead> Iterator for LinesIter<B> {
   type Item = ::std::io::Result<String> ;
   fn next(& mut self) -> Option< ::std::io::Result<String> > {
-    if let Some(line) = self.vec.pop() {
+    let maybe_line = if let Some(line) = self.vec.pop() {
       Some( Ok(line) )
     } else {
       self.lines.next()
+    } ;
+    if maybe_line.is_some() {
+      self.line_count += 1
     }
+    maybe_line
   }
 }

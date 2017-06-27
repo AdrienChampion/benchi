@@ -7,6 +7,7 @@ use nom::{ IResult, multispace } ;
 
 use errors::* ;
 use common::* ;
+use common::res::* ;
 
 
 
@@ -109,7 +110,7 @@ macro_rules! byte_cnt {
 }
 
 named!{
-  comment<usize>, byte_cnt!( re_bytes_find!(r"^//[^\n]*\n") )
+  comment<usize>, byte_cnt!( re_bytes_find!(r"^#[^\n]*\n") )
 }
 
 
@@ -480,6 +481,198 @@ pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
     ),
     IResult::Incomplete(_) => bail!(
       format!("conf file parse error: incomplete")
+    ),
+  }
+}
+
+
+
+
+
+
+named!{
+  #[doc = "Parses an unsigned integer, accepts sequences of zeros."],
+  uint<Res<& str>>, alt_complete!(
+    map!(
+      re_bytes_find!("[0-9][0-9]*"),
+      |bytes| from_utf8(bytes).chain_err(
+        || "expected integer"
+      )
+    ) |
+    map!( tag!(""), |_| Err( "expected integer".into() ))
+  )
+}
+
+named!{
+  #[doc = "Parses a duration."],
+  duration< Res<Duration> >, do_parse!(
+    secs: uint >>
+    char!('.') >>
+    nanos: uint >> (
+      secs.and_then(
+        |secs| nanos.map(
+          |nanos| (secs, nanos)
+        )
+      ).and_then(
+        |(secs, nanos)| u64::from_str(secs).chain_err(
+          || format!("expected integer (u64, seconds), got `{}`", secs)
+        ).and_then(
+          |secs| u32::from_str(nanos).chain_err(
+            || format!("expected integer (u32, nanos), got `{}`", secs)
+          ).map( |nanos| Duration::new(secs, nanos) )
+        )
+      )
+    )
+  )
+}
+
+named!{
+  #[doc = "Parses a BenchRes."],
+  bench_res< Res<(usize, String, BenchRes)> >, do_parse!(
+    index: uint >>
+    opt_spc_cmt >>
+    char!('"') >>
+    name: map!(
+      re_bytes_find!(r#"^[^"]*"#),
+      |bytes| from_utf8(bytes).chain_err(
+        || "error during conversion to string"
+      )
+    ) >>
+    char!('"') >>
+    opt_spc_cmt >>
+    bench_res: alt_complete!(
+      map!(
+        tag!("timeout"), |_| Ok(BenchRes::Timeout)
+      ) |
+      map!(
+        tag!("error"), |_| Ok(BenchRes::Error)
+      ) |
+      map!(
+        duration, |d: Res<Duration>| d.map(
+          |d| BenchRes::Success(d, None)
+        )
+      )
+    ) >>
+    opt_spc_cmt >>
+    code: signed_int >> (
+      index.and_then(
+        |index| usize::from_str(index).chain_err(
+          || "expected integer"
+        )
+      ).and_then(
+        |index| name.map(|name| (index, name))
+      ).and_then(
+        |(index, name)| code.map(
+          |code| (index, name, code)
+        )
+      ).and_then(
+        |(index, name, code)| bench_res.map(
+          |mut res| {
+            res.set_code(code) ;
+            (index, name.into(), res)
+          }
+        )
+      )
+    )
+  )
+}
+
+
+
+
+
+/// Parses a dump file.
+fn parse_dump<'a>(
+  bytes: & 'a [u8], file: String, run_res: & mut RunRes
+) -> IResult<& 'a [u8], Res<ToolRes>> {
+  let mut cnt = 0 ;
+  let mut benchs: HashMap<BenchIndex,_> = HashMap::new() ;
+  do_parse!(
+    bytes,
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    tool: map!(
+      apply!(tool_conf, cnt), |(tool, len)| {
+        cnt += len ;
+        tool
+      }
+    ) >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    vald_conf: validator_conf >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    tag!("timeout") >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    char!(':') >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    timeout: duration >>
+    map!( opt_spc_cmt, |add| cnt += add ) >>
+    bench_lines: many0!(
+      do_parse!(
+        data: bench_res >>
+        opt_spc_cmt >> (
+          data.and_then(
+            |(index, name, res)| run_res.check_bench_index(
+              index.into(), name
+            ).map(
+              |()| (index, res)
+            )
+          ).and_then(
+            |(index, res)| {
+              let prev = benchs.insert(index.into(), res) ;
+              if prev.is_some() {
+                Err(
+                  format!("found 2 benchmarks with index `{}`", index).into()
+                )
+              } else {
+                Ok(())
+              }
+            }
+          )
+        )
+      )
+    ) >> ({
+      let mut res = Ok(()) ;
+      for r in bench_lines {
+        if res.is_err() { break }
+        res = r
+      }
+      res.and_then(
+        |_| timeout.and_then(
+          |timeout| tool.and_then(
+            |tool| vald_conf.map(
+              |vald_conf| ToolRes {
+                tool, timeout, file, res: benchs, vald_conf
+              }
+            )
+          )
+        )
+      )
+    })
+  )
+}
+
+
+/// Parses a dump file from some bytes.
+pub fn dump(
+  bytes: & [u8], file: String, run_res: & mut RunRes
+) -> Res<ToolRes> {
+  match parse_dump(bytes, file, run_res) {
+    IResult::Done(rest, tool_res) => {
+      if rest.is_empty() {
+        tool_res
+      } else {
+        bail!(
+          format!(
+            "dump parse error: could not parse whole file: `{}`",
+            String::from_utf8_lossy(rest)
+          )
+        )
+      }
+    },
+    IResult::Error(e) => bail!(
+      format!("dump parse error: `{:?}`", e)
+    ),
+    IResult::Incomplete(_) => bail!(
+      format!("dump parse error: incomplete")
     ),
   }
 }

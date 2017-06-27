@@ -2,8 +2,9 @@
 
 use common::* ;
 use common::plot::* ;
+use common::res::* ;
 use errors::* ;
-use loading::{ Data, ToolData } ;
+use loading::ToolData ;
 
 /// Generates the comparative scatterplot between two tools.
 pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
@@ -70,7 +71,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
   // ) ;
   let tmo_time_1 = max_time + max_time / 10 ;
   let tmo_time_2 = tmo_time_1 ;
-  let error_time_1 = if conf.errs_as_tmo {
+  let error_time_1 = if conf.errs_as_tmos {
     tmo_time_1
   } else {
     max_time + max_time / 5
@@ -140,7 +141,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
       (d_1, d_2) => {
         let mut is_error = false ;
         let (d_1, d_2) = (
-          d_1.unwrap_or( Data::Error ), d_2.unwrap_or( Data::Error )
+          d_1.unwrap_or( BenchRes::Error ), d_2.unwrap_or( BenchRes::Error )
         ) ;
         if d_1.is_err() && d_2.is_err() {
           dble_errors += 1
@@ -174,7 +175,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
           }
         ) ;
 
-        if ! conf.no_errors || conf.errs_as_tmo || ! is_error {
+        if ! conf.no_errors || conf.errs_as_tmos || ! is_error {
           file.write_all(
             format!(
               "{} {}\n", time_1.as_sec_str(), time_2.as_sec_str()
@@ -261,7 +262,7 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
 
   let (
     vert_err_line, horz_err_line, max_range
-  ) = if conf.no_errors || conf.errs_as_tmo {
+  ) = if conf.no_errors || conf.errs_as_tmos {
     ( "".to_string(), "".to_string(), (tmo_time + tmo_time / 10).as_sec_str() )
   } else {(
     format!(

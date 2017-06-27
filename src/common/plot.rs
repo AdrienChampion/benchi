@@ -16,7 +16,7 @@ pub struct PlotConf {
   /// Ignore errors?
   pub no_errors: bool,
   /// Consider errors as timeout?
-  pub errs_as_tmo: bool,
+  pub errs_as_tmos: bool,
   /// Global conf.
   gconf: GConf,
 }
@@ -28,7 +28,7 @@ impl PlotConf {
   #[inline]
   pub fn mk(
     file: String, pdf: bool, then: Option<String>,
-    fmt: PlotFmt, no_errors: bool, errs_as_tmo: bool,
+    fmt: PlotFmt, no_errors: bool, errs_as_tmos: bool,
     gconf: GConf
   ) -> Res<Self> {
     use std::process::{ Command, Stdio } ;
@@ -72,8 +72,36 @@ impl PlotConf {
       }
     } ;
     Ok(
-      PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmo, gconf }
+      PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmos, gconf }
     )
+  }
+
+  /// Plot data file specific to a tool.
+  ///
+  /// Corresponds to `<plot_path>/<plot_file_basename>_<tool_short>.data`.
+  pub fn data_file_path_of(& self, tool: & ToolConf) -> Res<PathBuf> {
+    let mut res = PathBuf::new() ;
+    let path = Path::new(& self.file) ;
+    res.push(
+      if let Some(path) = path.parent() { path } else {
+        bail!(
+          format!(
+            "illegal plot output file `{}`", self.sad(& self.file)
+          )
+        )
+      }
+    ) ;
+    let file_name = if let Some(name) = path.file_stem() {
+      name.to_string_lossy()
+    } else {
+      bail!(
+        format!(
+          "illegal plot output file `{}`", self.sad(& self.file)
+        )
+      )
+    } ;
+    res.push( & format!("{}_{}.data", file_name, tool.short) ) ;
+    Ok(res)
   }
 }
 
@@ -220,13 +248,15 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
       "\
 Specifies a command to run on the pdf generated (ignored if `--run_gp off`)\
       "
-    ).value_name("command").takes_value(true)
+    ).value_name("command").takes_value(true).number_of_values(1)
   ).arg(
     Arg::with_name("run_gp").long("--run_gp").help(
       "\
 Runs `gnuplot` (or not) to generate the final plot\
       "
-    ).default_value("on").takes_value(true).validator(
+    ).default_value("on").takes_value(true).number_of_values(
+      1
+    ).validator(
       bool_validator
     ).value_name(bool_format)
   ).arg(
@@ -234,15 +264,19 @@ Runs `gnuplot` (or not) to generate the final plot\
       "\
 Completely ignore benchmarks for which at least one tool returned an error\
       "
-    ).default_value("off").takes_value(true).validator(
+    ).default_value("off").takes_value(true).number_of_values(
+      1
+    ).validator(
       bool_validator
     ).value_name(bool_format)
   ).arg(
-    Arg::with_name("errs_as_tmo").long("--errs_as_tmo").help(
+    Arg::with_name("errs_as_tmos").long("--errs_as_tmos").help(
       "\
 Consider errors as timeouts\
       "
-    ).default_value("off").takes_value(true).validator(
+    ).default_value("off").takes_value(true).number_of_values(
+      1
+    ).validator(
       bool_validator
     ).value_name(bool_format)
   ).arg(
@@ -256,7 +290,9 @@ Alternatively the extension can be set on the <PLOT_FILE>:
   // Sets `--to` to svg:
   benchi plot my_plot.svg ...\
       "
-    ).default_value("pdf").takes_value(true).validator(
+    ).default_value("pdf").takes_value(true).number_of_values(
+      1
+    ).validator(
       PlotFmt::validator
     ).value_name( PlotFmt::values() )
   ).arg(
@@ -302,12 +338,12 @@ pub fn plot_clap<'a>(
       "unreachable(plot:no_errors): input validated in clap"
     ) ;
 
-    let errs_as_tmo = bool_of_str(
-      plot_matches.value_of("errs_as_tmo").expect(
-        "unreachable(plot:errs_as_tmo): default provided"
+    let errs_as_tmos = bool_of_str(
+      plot_matches.value_of("errs_as_tmos").expect(
+        "unreachable(plot:errs_as_tmos): default provided"
       )
     ).expect(
-      "unreachable(plot:errs_as_tmo): input validated in clap"
+      "unreachable(plot:errs_as_tmos): input validated in clap"
     ) ;
 
     let fmt = PlotFmt::of_str(
@@ -323,7 +359,7 @@ pub fn plot_clap<'a>(
     } else { None } ;
 
     let plot_conf = match PlotConf::mk(
-      file, run_gp, cmd, fmt, no_errors, errs_as_tmo, conf
+      file, run_gp, cmd, fmt, no_errors, errs_as_tmos, conf
     ) {
       Ok(conf) => conf,
       Err(e) => return Some( Err(e) ),
