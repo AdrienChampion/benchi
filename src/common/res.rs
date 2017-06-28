@@ -1,7 +1,6 @@
 //! Types representing results.
 
 use common::* ;
-use consts::data::* ;
 
 /// Duration from a success regex match.
 pub fn duration_of_time_re<'a>(caps: ::regex::Captures<'a>) -> Res<Duration> {
@@ -30,24 +29,6 @@ pub enum BenchRes {
   Error,
 }
 impl BenchRes {
-
-  /// Parses a string. Error on regex match but conversion fail. None if no
-  /// regex match.
-  pub fn of_str(
-    s: & str, validation: Option<Validation>
-  ) -> Res< Option<BenchRes> > {
-    if let Some(caps) = success_re.captures(s) {
-      duration_of_time_re(caps).map(
-        |val| Some( BenchRes::Success(val, validation) )
-      )
-    } else if timeout_re.is_match(s) {
-      Ok( Some( BenchRes::Timeout ) )
-    } else if error_re.is_match(s) {
-      Ok( Some(BenchRes::Error) )
-    } else {
-      Ok(None)
-    }
-  }
 
   /// Sets the validation code.
   pub fn set_code(& mut self, code: Validation) {

@@ -123,88 +123,10 @@ pub mod dump {
 
 /// Data-related regexs
 pub mod data {
-  use regex::Regex ;
-
   #[doc = "Indicates a timeout result."]
   pub static timeout_res: & str = "timeout" ;
   #[doc = "Indicates an error result."]
   pub static error_res: & str = "error" ;
-
-  #[test]
-  fn regexes() {
-    let res = result_re.captures(
-      r#"42 "benchmark line from file" success 72"#
-    ).unwrap() ;
-    assert_eq!(& res["uid"], "42") ;
-    assert_eq!(& res["bench"], "benchmark line from file") ;
-    assert_eq!(& res["res"], "success") ;
-    assert_eq!(& res["vald"], "72") ;
-
-    let res = success_re.captures(r"743044.123456789").unwrap() ;
-    assert_eq!(& res["secs"], "743044") ;
-    assert_eq!(& res["nanos"], "123456789") ;
-    assert!( timeout_re.is_match("timeout") ) ;
-    assert!( error_re.is_match("error") )
-  }
-
-  lazy_static!{
-
-    #[doc = "
-Regex extracting a benchmark line. Four groups:
-
-- `uid`: bench uid,
-- `bench`: bench line from the bench file,
-- `res`: result,
-- `vald`: validation code, if any.
-    "]
-    pub static ref result_re: Regex = Regex::new(
-      r#"(?x)^
-        \s*(?P<uid>\d\d*)
-        \s*"(?P<bench>[^"]*)"
-        \s*(?P<res>[^\s]*)
-        \s*(?P<vald>\d*)
-        \s*
-      $"#
-    ).expect(
-      "problem in `runtime` static regex"
-    ) ;
-    #[doc =
-      "
-Regex matching a successful result.
-
-Two groups:
-
-- `secs`: seconds,
-- `nanos`: nanoseconds.
-      "
-    ]
-    pub static ref success_re: Regex = Regex::new(
-      & format!("^{}$", ::consts::time_re)
-    ).expect(
-      "problem in `success` static regex"
-    ) ;
-    #[doc =
-      "
-Regex matching a timeout result. No group.
-      "
-    ]
-    pub static ref timeout_re: Regex = Regex::new(
-      r#"^\s*timeout\s*$"#
-    ).expect(
-      "problem in `timeout` static regex"
-    ) ;
-    #[doc =
-      "
-Regex matching an error result. No group.
-      "
-    ]
-    pub static ref error_re: Regex = Regex::new(
-      r#"^\s*error\s*$"#
-    ).expect(
-      "problem in `error` static regex"
-    ) ;
-
-  }
 }
 
 /// Example configuration file.
