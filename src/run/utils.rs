@@ -81,13 +81,6 @@ pub fn bench_to_master_channel() -> Channel< Res<usize> > {
   channel()
 }
 
-/// Information from tool run to bench run. Communicates the uid of the tool
-/// run so that the bench run can send it a new job. Also sends the exit
-/// status, `None` if timeout or error.
-///
-/// Not a `Res`: the tool run communicates failures to the master directly.
-pub type ToolToBench = (usize, Option< (ToolIndex, ExitCode) >) ;
-
 
 /// Channel from tool runs to bench runs. 
 pub fn tool_to_bench_channel() -> Channel<usize> {

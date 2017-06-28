@@ -1,8 +1,4 @@
 //! Constants.
-
-/// Time regex as a string (for reuse).
-pub static time_re: & str = r"(?P<secs>\d\d*).(?P<nanos>\d\d*)" ;
-
 /// Validator constants.
 pub mod validator {
   /// Prefix added to validator scripts.

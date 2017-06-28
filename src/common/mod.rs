@@ -953,11 +953,6 @@ impl<T> Spnd<T> {
   pub fn xtract(self) -> T {
     self.val
   }
-  /// Yields the internal value.
-  #[inline]
-  pub fn get(& self) -> & T {
-    & self.val
-  }
   /// Length.
   #[inline]
   pub fn len(& self) -> usize {
@@ -972,11 +967,6 @@ impl<T> Spnd<T> {
   #[inline]
   pub fn map<U, F: Fn(T) -> U>(self, f: F) -> Spnd<U> {
     Spnd { val: f(self.val), start: self.start, len: self.len }
-  }
-  /// Changes the value.
-  #[inline]
-  pub fn replace(& mut self, val: T) {
-    self.val = val
   }
 }
 impl<T> ::std::ops::Deref for Spnd<T> {
@@ -1158,71 +1148,5 @@ pub fn example_conf_file(conf: & GConf, file: String) -> Res<()> {
   Ok(())
 }
 
-
-/// The optional exit code of a tool run.
-pub type ExitCode = Option<i32> ;
-
 /// Type returned by a `channel` function: a sender and a receiver.
 pub type Channel<T> = (Sender<T>, Receiver<T>) ;
-
-
-/// Line iterator buffer over a file.
-pub type FileLiter = LinesIter< BufReader<File> > ;
-
-/// Line iterator buffer. Counts lines.
-///
-/// Pushing lines that were not already there is a logical error and can cause
-/// an underflow of the line counter.
-pub struct LinesIter<B> {
-  /// Actual lines.
-  lines: Lines<B>,
-  /// Buffer that can be pushed to.
-  vec: Vec<String>,
-  /// Line counter.
-  line_count: usize,
-}
-impl<B: BufRead> LinesIter<B> {
-  /// Creates a line iterator.
-  pub fn mk(buf_read: B) -> Self {
-    LinesIter { lines: buf_read.lines(), vec: vec![], line_count: 0 }
-  }
-
-  /// Index of the **last line** popped.
-  pub fn last_line_index(& self) -> usize {
-    self.line_count
-  }
-
-  // /// Checks if there is a next line.
-  // pub fn has_next(& self) -> bool {
-  //   if self.vec.is_empty() {
-  //     if let Some(line) = self.lines.next() {
-  //       self.vec.push(line) ;
-  //       true
-  //     } else {
-  //       false
-  //     }
-  //   } else {
-  //     true
-  //   }
-  // }
-
-  /// Pushes a line.
-  pub fn push(& mut self, line: String) {
-    self.line_count += 1 ;
-    self.vec.push(line)
-  }
-}
-impl<B: ::std::io::BufRead> Iterator for LinesIter<B> {
-  type Item = ::std::io::Result<String> ;
-  fn next(& mut self) -> Option< ::std::io::Result<String> > {
-    let maybe_line = if let Some(line) = self.vec.pop() {
-      Some( Ok(line) )
-    } else {
-      self.lines.next()
-    } ;
-    if maybe_line.is_some() {
-      self.line_count += 1
-    }
-    maybe_line
-  }
-}

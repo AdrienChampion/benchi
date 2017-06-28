@@ -2,17 +2,6 @@
 
 use common::* ;
 
-/// Duration from a success regex match.
-pub fn duration_of_time_re<'a>(caps: ::regex::Captures<'a>) -> Res<Duration> {
-  u64::from_str( & caps["secs"] ).and_then(
-    |secs| u32::from_str( & caps["nanos"] ).map(
-      |nanos| Duration::new(secs, nanos)
-    )
-  ).chain_err(
-    || format!("while parsing time string")
-  )
-}
-
 
 
 /// Validation code.
