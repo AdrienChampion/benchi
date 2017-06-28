@@ -3,10 +3,6 @@
 use common::* ;
 
 
-
-/// Validation code.
-pub type Validation = i32 ;
-
 /// Result of a tool running on a benchmark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BenchRes {
@@ -25,6 +21,11 @@ impl BenchRes {
       BenchRes::Success(_, ref mut opt) => * opt = Some(code),
       _ => (),
     }
+  }
+
+  /// Returns the code of a result.
+  pub fn code(& self) -> Option<Validation> {
+    self.map( |_, res| res, || None, || None )
   }
 
   /// Map over the different types of data.
@@ -72,6 +73,9 @@ pub struct ToolRes {
   pub err_count: usize,
   /// Number of timeouts.
   pub tmo_count: usize,
+}
+impl ValdConfExt for ToolRes {
+  fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
 }
 impl ToolRes {
   /// Creates a tool result.
@@ -263,4 +267,207 @@ impl RunRes {
     self.benchs.insert(bench, name) ;
     Ok(())
   }
+}
+
+
+
+
+
+
+
+/// Handles the plot data files for different validators.
+pub enum DataFileHandler<'a> {
+  /// Merged, uses only one file.
+  Merged {
+    /// The only data file used.
+    file: File,
+    /// The path to the only data file used.
+    path: PathBuf,
+  },
+  /// Split, as many files as validators *used*.
+  Split {
+    /// The `ValdConf` common to all tools.
+    vald_conf: ValdConf,
+    /// Map from error codes to data files and their path.
+    map: HashMap<Validation, (File, PathBuf)>,
+    /// File and path for unknowns (in case of double timeout / error).
+    unknown: Option<(File, PathBuf)>,
+    /// Conf.
+    conf: & 'a PlotConf,
+  },
+}
+impl<'a> DataFileHandler<'a> {
+  /// Creates a handler from a RunRes and a conf.
+  ///
+  /// Error if not in `merged` mode and validation configuration don't match.
+  pub fn mk(conf: & 'a PlotConf, run_res: & RunRes) -> Res<Self> {
+
+    if conf.merge { // Merged, only one file needed.
+      let (file, path) = Self::data_file_of(conf, None) ? ;
+      Ok( DataFileHandler::Merged { file, path } )
+
+    } else { // Not merging, check the validators make sense.
+      let vald_conf = {
+        let mut iter = run_res.tools.iter() ;
+        if let Some(tool_res) = iter.next() {
+          let vald_conf = tool_res.vald_conf.clone() ;
+          for other_tool_res in iter {
+            if other_tool_res.vald_conf != vald_conf {
+              return (
+                Err(
+                  format!(
+                    "If you still want to plot the data, consider using \
+                    option `{}`: `benchi plot ... compare {} ...",
+                    conf.happy("--merged"),
+                    conf.emph("--merged on")
+                  ).into()
+                ) as Res<Self>
+              ).chain_err(
+                || format!(
+                  "the data files most likely come from {}.",
+                  conf.sad("different benchi runs")
+                )
+              ).chain_err(
+                || format!(
+                  "data for tools {} and {} do not agree on their validators,",
+                  conf.bad(& tool_res.tool.name), conf.bad(& tool_res.tool.name)
+                )
+              )
+            }
+          }
+          vald_conf
+        } else {
+          bail!("no data file provided")
+        }
+      } ;
+
+      if vald_conf.is_empty() {
+        // No validator provided, doing a merged.
+        let (file, path) = Self::data_file_of(conf, None) ? ;
+        Ok( DataFileHandler::Merged { file, path } )
+      } else {
+        let map = HashMap::with_capacity( vald_conf.len() ) ;
+        Ok(
+          DataFileHandler::Split { vald_conf, map, unknown: None, conf }
+        )
+      }
+    }
+  }
+
+  /// Returns the data file corresponding to a validator.
+  pub fn file_of(
+    & mut self, code: Option<Validation>
+  ) -> Res<(& mut File, & PathBuf)> {
+    match * self {
+      DataFileHandler::Merged { ref mut file, ref path } => Ok((file, path)),
+      
+      DataFileHandler::Split { ref mut map, .. }
+      if code.map(|code| map.contains_key(& code)).unwrap_or(false) => {
+        let file_n_path = map.get_mut(& code.unwrap()).unwrap() ;
+        Ok( (& mut file_n_path.0, & file_n_path.1) )
+      },
+      
+      DataFileHandler::Split {
+        ref mut map, ref vald_conf, ref mut unknown, ref conf,
+      } => if let Some(code) = code {
+        // Not initialized yet, let's doodis.
+        if let Some(vald) = vald_conf.get(code) {
+          let file_n_path = Self::data_file_of(conf, Some(& vald.alias)) ? ;
+          let _ = map.insert(code, file_n_path) ;
+          let file_n_path = map.get_mut(& code).unwrap() ;
+          Ok( (& mut file_n_path.0, & file_n_path.1) )
+        } else {
+          bail!( format!("unknown validation code {}", code) )
+        }
+      } else if let & mut Some((ref mut file, ref path)) = unknown {
+        Ok((file, path))
+      } else {
+        * unknown = Some( Self::data_file_of(conf, Some("err_or_tmo")) ? ) ;
+        let file_n_path = unknown.as_mut().unwrap() ;
+        Ok( (& mut file_n_path.0, & file_n_path.1) )
+      },
+    }
+  }
+
+  /// Data file from a string.
+  fn data_file_of(
+    conf: & PlotConf, s: Option<& str>
+  ) -> Res<(File, PathBuf)> {
+    let mut path = PathBuf::from(& conf.file) ;
+    if let Some(s) = s {
+      if let Some(stem) = path.file_stem().map(
+        |stem| stem.to_string_lossy().to_string()
+      ) {
+        path.set_file_name( & format!("{}_{}", stem, s) )
+      } else {
+        bail!(
+          format!("illegal plot file name `{}`", conf.bad(& conf.file))
+        )
+      }
+    }
+    let success = path.set_extension("data") ;
+    if ! success {
+      bail!(
+        format!("illegal plot file name `{}`", conf.bad(& conf.file))
+      )
+    }
+    let mut file = conf.open_file_writer(& path).chain_err(
+      || format!(
+        "while opening data file `{}`",
+        conf.sad( path.to_string_lossy() )
+      )
+    ) ? ;
+    writeln!(
+      file, "# Generated by {} v{}\n\n", crate_name!(), crate_version!()
+    ).chain_err(
+      || format!(
+        "while writing to comparative data file `{}`",
+        conf.sad( path.to_string_lossy() )
+      )
+    ) ? ;
+    Ok( (file, path) )
+  }
+
+  /// Fold over data files.
+  ///
+  /// Parameters of the fold function:
+  /// - accumulator,
+  /// - validator counter,
+  /// - name of the validator,
+  /// - path to the file.
+  pub fn fold_data_paths<
+    Acc, Fold: Fn(Acc, usize, Option<& str>, & str) -> Res<Acc>
+  >(& self, mut init: Acc, fold: Fold) -> Res<Acc> {
+    match * self {
+      DataFileHandler::Merged { ref path, .. } => fold(
+        init, 1, None, & path.to_string_lossy().to_string()
+      ),
+      DataFileHandler::Split {
+        ref vald_conf, ref map, ref unknown, ..
+      } => {
+        let mut count = 0 ;
+        if let Some((_, ref path)) = * unknown {
+          init = fold(
+            init, 0, Some("??"), & path.to_string_lossy().to_string()
+          ) ?
+        }
+        // Incrementing here on purpose, this ensures that only unknown data
+        // gets index 0.
+        count += 1 ;
+        for ( code, & (_, ref path) ) in map {
+          let vald = vald_conf.get(* code).ok_or_else(
+            || format!("unknown validation code {}", code)
+          ) ? ;
+          init = fold(
+            init, count, Some(& vald.desc),
+            & path.to_string_lossy().to_string()
+          ) ? ;
+          count += 1
+        }
+        Ok(init)
+      },
+    }
+  }
+
+
 }

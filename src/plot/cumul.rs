@@ -8,9 +8,9 @@ use errors::* ;
 
 
 /// Generates the cumulative plot between several tools.
-pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
+pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
   
-  log!{ conf => "Loading tool data..." }
+  log!{ conf => "  loading tool data..." }
   let mut run_res = ::common::res::RunRes::of_files( files.clone() ) ? ;
   
   if conf.no_errors {
@@ -29,11 +29,6 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
         changed,
         if changed == 1 {""} else {"s"}, if changed == 1 {""} else {"s"}
     }
-  }
-
-  log!{
-    conf =>
-      "Generating cumulative plot for {} tools...", files.len()
   }
 
   let mut tool_data = Vec::with_capacity( run_res.tools.len() ) ;
@@ -59,7 +54,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     warn!(
       conf => "no data to plot, nothing to do"
     ) ;
-    return Ok(())
+    return Ok( None )
   }
 
   if tool_data.len() > 16 {
@@ -155,54 +150,13 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       ) ?
     }
 
-    if conf.pdf {
-      log!{
-        conf, verb =>
-          "  running `{} {}`...", conf.emph("gnuplot"), conf.emph(& conf.file)
-      }
-      // Run gnuplot.
-      let status = Command::new("gnuplot").arg(& conf.file).status().chain_err(
-        || format!(
-          "while running gnuplot command on `{}`", conf.emph(& conf.file)
-        )
-      ) ? ;
-
-      if ! status.success() {
-        bail!(
-          format!("gnuplot failed on plot file `{}`", conf.emph(& conf.file))
-        )
-      }
-
-      if let Some(ref cmd) = conf.then {
-        log!{ conf, verb =>
-          "  running `{} {}`...", conf.emph(cmd), conf.emph(& output_file)
-        }
-        let status = Command::new(cmd).arg(& output_file).status().chain_err(
-          || format!(
-            "while running `{} {}` (user-provided command)",
-            conf.emph(cmd), conf.emph(& output_file)
-          )
-        ) ? ;
-        if ! status.success() {
-          bail!(
-            format!(
-              "failure on user-provided command `{} {}`",
-              conf.emph(cmd), conf.emph(& output_file)
-            )
-          )
-        }
-      }
-    }
-
     ()
   } else {
     // Should be unreachable.
     ()
   }
 
-  log!{ conf => "Done" }
-
-  Ok(())
+  Ok( Some(output_file) )
 }
 
 

@@ -7,8 +7,8 @@ use common::* ;
 pub struct PlotConf {
   /// Output file.
   pub file: String,
-  /// Generate pdf?
-  pub pdf: bool,
+  /// Run gnuplot?
+  pub gnuplot: bool,
   /// Command to run.
   pub then: Option<String>,
   /// Gnuplot format (terminal).
@@ -17,6 +17,8 @@ pub struct PlotConf {
   pub no_errors: bool,
   /// Consider errors as timeout?
   pub errs_as_tmos: bool,
+  /// Merge all validation results?
+  pub merge: bool,
   /// Global conf.
   gconf: GConf,
 }
@@ -27,12 +29,12 @@ impl PlotConf {
   /// Creates a plot conf.
   #[inline]
   pub fn mk(
-    file: String, pdf: bool, then: Option<String>,
-    fmt: PlotFmt, no_errors: bool, errs_as_tmos: bool,
+    file: String, gnuplot: bool, then: Option<String>,
+    fmt: PlotFmt, no_errors: bool, errs_as_tmos: bool, merge: bool,
     gconf: GConf
   ) -> Res<Self> {
     use std::process::{ Command, Stdio } ;
-    let pdf = if pdf {
+    let gnuplot = if gnuplot {
       let status = Command::new(
         "gnuplot"
       ).arg("-V").stdin(
@@ -45,8 +47,7 @@ impl PlotConf {
       if ! status.map(|s| s.success()).unwrap_or(false) {
         warn!{
           gconf =>
-            "gnuplot does not seem to be installed" ;
-            "deactivating pdf generation"
+            "gnuplot does not seem to be installed"
         }
         false
       } else {
@@ -72,7 +73,9 @@ impl PlotConf {
       }
     } ;
     Ok(
-      PlotConf { file, pdf, then, fmt, no_errors, errs_as_tmos, gconf }
+      PlotConf {
+        file, gnuplot, then, fmt, no_errors, errs_as_tmos, merge, gconf
+      }
     )
   }
 
@@ -195,6 +198,11 @@ pub enum PlotKind {
 
 
 
+
+
+
+
+
 /// The plot subcommand.
 pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
   use clap_lib::* ;
@@ -206,7 +214,7 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
   ).setting( AppSettings::SubcommandRequired ).arg(
     Arg::with_name("then").long("--then").help(
       "\
-Specifies a command to run on the pdf generated (ignored if `--run_gp off`)\
+Specifies a command to run on the file generated (ignored if `--run_gp off`)\
       "
     ).value_name("command").takes_value(true).number_of_values(1)
   ).arg(
@@ -223,6 +231,16 @@ Runs `gnuplot` (or not) to generate the final plot\
     Arg::with_name("no_errors").long("--no_errs").help(
       "\
 Completely ignore benchmarks for which at least one tool returned an error\
+      "
+    ).default_value("off").takes_value(true).number_of_values(
+      1
+    ).validator(
+      bool_validator
+    ).value_name(bool_format)
+  ).arg(
+    Arg::with_name("merge").long("--merge").help(
+      "\
+Ignore validators, plot everything together\
       "
     ).default_value("off").takes_value(true).number_of_values(
       1
@@ -306,6 +324,14 @@ pub fn plot_clap<'a>(
       "unreachable(plot:errs_as_tmos): input validated in clap"
     ) ;
 
+    let merge = bool_of_str(
+      plot_matches.value_of("merge").expect(
+        "unreachable(plot:merge): default provided"
+      )
+    ).expect(
+      "unreachable(plot:merge): input validated in clap"
+    ) ;
+
     let fmt = PlotFmt::of_str(
       plot_matches.value_of("gp_fmt").expect(
         "unreachable(plot:gp_fmt): default provided"
@@ -319,7 +345,7 @@ pub fn plot_clap<'a>(
     } else { None } ;
 
     let plot_conf = match PlotConf::mk(
-      file, run_gp, cmd, fmt, no_errors, errs_as_tmos, conf
+      file, run_gp, cmd, fmt, no_errors, errs_as_tmos, merge, conf
     ) {
       Ok(conf) => conf,
       Err(e) => return Some( Err(e) ),

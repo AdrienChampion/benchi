@@ -120,6 +120,10 @@ pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
 
 
 
+/// Validation code.
+pub type Validation = i32 ;
+
+
 
 /// Validation code info.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,7 +143,7 @@ pub struct ValdCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValdConf {
   /// Success codes.
-  succ: HashMap<i32, ValdCode>,
+  succ: HashMap<Validation, ValdCode>,
 }
 impl ValdConf {
   /// True if the valdconf is empty.
@@ -151,12 +155,15 @@ impl ValdConf {
     ValdConf { succ: HashMap::new() }
   }
   /// Info of an exit code.
-  pub fn get(& self, code: i32) -> Option<& ValdCode> {
+  pub fn get(& self, code: Validation) -> Option<& ValdCode> {
     self.succ.get(& code)
   }
 
+  /// Number of validators registered.
+  pub fn len(& self) -> usize { self.succ.len() }
+
   /// Adds a new success validation code.
-  pub fn add_succ(mut self, code: i32, info: ValdCode) -> Res<Self> {
+  pub fn add_succ(mut self, code: Validation, info: ValdCode) -> Res<Self> {
     if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {
       Err(
         format!(
@@ -179,12 +186,9 @@ impl ValdConf {
     }
     Ok(())
   }
-
-  // /// Parses a validation configuration from a dump.
-  // pub fn of_dump<B: BufRead>(lines: LinesIter<B>) -> Res<Self> {
-    
-  // }
 }
+
+
 /// Validator configuration extensions.
 pub trait ValdConfExt {
   /// Accessor.
@@ -207,7 +211,7 @@ pub trait ValdConfExt {
 
   /// Iterator over the success codes declared.
   fn validators_iter(& self) -> ::std::collections::hash_map::Iter<
-    i32, ValdCode
+    Validation, ValdCode
   > {
     self.vald_conf().succ.iter()
   }
