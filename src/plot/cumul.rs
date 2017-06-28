@@ -111,7 +111,9 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       )
     }
   } ;
-  log!{ conf, verb => "  (output pdf file is `{}`)", conf.emph(& output_file) }
+  log!{
+    conf, verb => "  > output pdf file is `{}`", conf.emph(& output_file)
+  }
 
   file.write_all(
     format!(
@@ -149,7 +151,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       format!(
         "  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
         data_file.to_string_lossy(), index,
-        tool_res.tool.graph, tool_res.success_count()
+        tool_res.tool.graph, tool_res.suc_count
       ).as_bytes()
     ).chain_err(
       || format!(
@@ -163,7 +165,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
         format!(
           ", \\\n  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
           data_file.to_string_lossy(), index,
-          tool_res.tool.graph, tool_res.success_count()
+          tool_res.tool.graph, tool_res.suc_count
         ).as_bytes()
       ).chain_err(
         || format!(
@@ -173,7 +175,10 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     }
 
     if conf.pdf {
-      log!{ conf, verb => "  running gnuplot..." }
+      log!{
+        conf, verb =>
+          "  running `{} {}`...", conf.emph("gnuplot"), conf.emph(& conf.file)
+      }
       // Run gnuplot.
       let status = Command::new("gnuplot").arg(& conf.file).status().chain_err(
         || format!(
@@ -188,7 +193,9 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
       }
 
       if let Some(ref cmd) = conf.then {
-        log!{ conf, verb => "  running user-provided command" }
+        log!{ conf, verb =>
+          "  running `{} {}`...", conf.emph(cmd), conf.emph(& output_file)
+        }
         let status = Command::new(cmd).arg(& output_file).status().chain_err(
           || format!(
             "while running `{} {}` (user-provided command)",

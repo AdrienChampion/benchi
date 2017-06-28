@@ -527,6 +527,14 @@ named!{
 }
 
 named!{
+  #[doc = "Parses an exit code."],
+  code_opt< Res< Option<i32> > >, alt_complete!(
+    map!( char!('?'), |_| Ok(None) ) |
+    map!( signed_int, |int: Res<i32>| int.map(|int| Some(int)) )
+  )
+}
+
+named!{
   #[doc = "Parses a BenchRes."],
   bench_res< Res<(usize, String, BenchRes)> >, do_parse!(
     index: uint >>
@@ -554,7 +562,7 @@ named!{
       )
     ) >>
     opt_spc_cmt >>
-    code: signed_int >> (
+    code: code_opt >> (
       index.and_then(
         |index| usize::from_str(index).chain_err(
           || "expected integer"
@@ -568,7 +576,9 @@ named!{
       ).and_then(
         |(index, name, code)| bench_res.map(
           |mut res| {
-            res.set_code(code) ;
+            if let Some(code) = code {
+              res.set_code(code)
+            }
             (index, name.into(), res)
           }
         )
@@ -639,9 +649,9 @@ fn parse_dump<'a>(
         |_| timeout.and_then(
           |timeout| tool.and_then(
             |tool| vald_conf.map(
-              |vald_conf| ToolRes {
-                tool, timeout, file, res: benchs, vald_conf
-              }
+              |vald_conf| ToolRes::mk(
+                tool, timeout, file, benchs, vald_conf
+              )
             )
           )
         )

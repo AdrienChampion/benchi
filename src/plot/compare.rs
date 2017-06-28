@@ -2,200 +2,146 @@
 
 use common::* ;
 use common::plot::* ;
-use common::res::* ;
 use errors::* ;
-use loading::ToolData ;
 
 /// Generates the comparative scatterplot between two tools.
 pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
+  log!{ conf => "Loading tool data..." }
+  let mut run_res = ::common::res::RunRes::of_files(
+    vec![ file_1.clone(), file_2.clone() ]
+  ) ? ;
+
+  let mut res_2 = if let Some(res) = run_res.tools.pop() { res } else {
+    bail!("[bug] there's no data in this run result")
+  } ;
+  let mut res_1 = if let Some(res) = run_res.tools.pop() { res } else {
+    bail!("[bug] there was only one tool result in this run result")
+  } ;
+  if ! run_res.tools.is_empty() {
+    bail!("[bug] there was more than two tool results in this run result")
+  }
+
+  let has_errs = res_1.err_count + res_2.err_count > 0 ;
+
+  if res_1.suc_count == 0 {
+    warn!(
+      conf =>
+        "data for `{}`: everything is timeout or error",
+        conf.bad(& res_1.tool.name)
+    )
+  }
+  if res_2.suc_count == 0 {
+    warn!(
+      conf =>
+        "data for `{}`: everything is timeout or error",
+        conf.bad(& res_2.tool.name)
+    )
+  }
+
+  let (lo_time, hi_time) = match (
+    res_1.time_interval(), res_2.time_interval()
+  ) {
+    (None, None) => (
+      Duration::zero(), ::std::cmp::max(res_1.timeout, res_2.timeout)
+    ),
+    ( Some((lo, hi)), None ) => (lo, hi),
+    ( None, Some((lo, hi)) ) => (lo, hi),
+    ( Some((lo1, hi1)), Some((lo2, hi2)) ) => (
+      ::std::cmp::min(lo1, lo2), ::std::cmp::max(hi1, hi2)
+    ),
+  } ;
+  let tmo_time = hi_time + hi_time / 10 ;
+  let err_time = hi_time + hi_time / 5 ;
+  let min_time = lo_time - lo_time / 10 ;
+
   log!{
     conf => "Generating comparative scatterplot..." ; {
       log!{ conf, verb => "  loading data files..." }
     }
   }
 
-  let (data_1, max_index_1) = ToolData::compare_of_file(
-    conf, & file_1
-  ).chain_err(
-    || format!("while reading data from {}", conf.sad(& file_1))
-  ) ? ;
-  if data_1.is_empty() {
-    warn!(
-      conf =>
-        "data for `{}`: everything is timeout or error,",
-        conf.bad(& data_1.tool.name) ;
-        "a cumulative plot would be more informative..."
-    )
-  }
-
-  let (data_2, max_index_2) = ToolData::compare_of_file(
-    conf, & file_2
-  ).chain_err(
-    || format!("while reading data from {}", conf.sad(& file_2))
-  ) ? ;
-  if data_2.is_empty() {
-    warn!(
-      conf =>
-        "data for `{}`: everything is timeout or error",
-        conf.bad(& data_2.tool.name) ;
-        "a cumulative plot would be more informative..."
-    )
-  }
-
-  let max_index = ::std::cmp::max( max_index_1, max_index_2 ) ;
-  if data_1.len() != data_2.len() {
-    warn!(
-      conf =>
-        "File `{}` has {} benchmarks, but",
-        conf.emph(& file_1), conf.sad(& format!("{}", data_1.len())) ;
-        "file `{}` has {} of them.",
-        conf.emph(& file_2), conf.sad(& format!("{}", data_2.len())) ;
-        "Data files from the same run \
-        should have the same number of benchmarks" ;
-        "unless there was an error or it was cancelled." ;
-        "Missing benchmarks from one or the other will be treated as errors."
-    )
-  }
-  let max_time = ::std::cmp::max( data_1.max_time(), data_2.max_time() ) ;
-  // let tmo_time_1 = ::std::cmp::max(
-  //   data_1.max_time() + data_1.max_time() / 10, data_1.max_time() + 1_000_000
-  // ) ;
-  // let error_time_1 = ::std::cmp::max(
-  //   data_1.max_time() + data_1.max_time() / 5, data_1.max_time() + 2_000_000
-  // ) ;
-  // let tmo_time_2 = ::std::cmp::max(
-  //   data_2.max_time() + data_2.max_time() / 10, data_2.max_time() + 1_000_000
-  // ) ;
-  // let error_time_2 = ::std::cmp::max(
-  //   data_2.max_time() + data_2.max_time() / 5, data_2.max_time() + 2_000_000
-  // ) ;
-  let tmo_time_1 = max_time + max_time / 10 ;
-  let tmo_time_2 = tmo_time_1 ;
-  let error_time_1 = if conf.errs_as_tmos {
-    tmo_time_1
-  } else {
-    max_time + max_time / 5
-  } ;
-  let error_time_2 = error_time_1 ;
-
-  let data_file = {
+  let (mut data_file, data_file_path) = {
     let mut path = PathBuf::from(& conf.file) ;
-    let data_file = path.file_stem().and_then(
-      |file| file.to_str()
-    ).map(
-      |file| format!("{}.data", file)
-    ).unwrap_or_else(
-      || format!("compare.data")
-    ) ;
-    path.pop() ;
-    path.push(& data_file) ;
-    if let Some(file) = path.to_str() { file.to_string() } else {
+    let success = path.set_extension("data") ;
+    if ! success {
       bail!(
-        format!("illegal data file path `{}`", conf.file)
+        format!("illegal plot file name `{}`", conf.bad(& conf.file))
       )
     }
-  } ;
-
-  log!{
-    conf, verb => "  writing data file `{}`...", conf.emph(& data_file)
-  }
-  let mut file = conf.open_file_writer(& data_file).chain_err(
-    || format!(
-      "while opening comparative data file `{}` (write)",
-      conf.emph(& data_file)
+    (
+      conf.open_file_writer(& path).chain_err(
+        || format!(
+          "while opening comparative data file `{}`",
+          conf.sad( path.to_string_lossy() )
+        )
+      ) ?,
+      path
     )
-  ) ? ;
-
-  file.write_all(
-    format!(
-      "\n# Generated by {} v{}\n\n", crate_name!(), crate_version!()
-    ).as_bytes()
+  } ;
+  writeln!(
+    data_file, "# Generated by {} v{}\n\n", crate_name!(), crate_version!()
   ).and_then(
-    |()| file.write_all(
-      format!(
-        "# `{}` VERSUS `{}`\n", data_1.tool.name, data_2.tool.name
-      ).as_bytes()
+    |_| writeln!(
+      data_file, "# `{}` VERSUS `{}`\n", res_1.tool.name, res_2.tool.name
     )
   ).chain_err(
     || format!(
-      "while writing to comparative data file `{}`", conf.emph(& data_file)
+      "while writing to comparative data file `{}`",
+      conf.sad( data_file_path.to_string_lossy() )
     )
   ) ? ;
 
-  // Count double timeouts, errors and double errors.
-  let (
-    mut dble_timeouts, mut timeouts_1, mut timeouts_2,
-    mut dble_errors, mut errors_1, mut errors_2
-  ) = (0, 0, 0, 0, 0, 0) ;
+  let mut not_in_res_2 = vec![] ;
+  let (mut dble_tmos, mut dble_errs) = (0, 0) ;
 
-  'iter_benchs: for index in BenchIndex::iter(max_index) {
-    match ( data_1.get(index).cloned(), data_2.get(index).cloned() ) {
-
-      // Double error. Maybe? Dunno. Count but ignore I guess.
-      (None, None) => warn!{
-        conf =>
-        "benchmark with uid {} appears in neither of the data files",
-        conf.emph( & format!("{}", * index) )
-      },
-
-      (d_1, d_2) => {
-        let mut is_error = false ;
-        let (d_1, d_2) = (
-          d_1.unwrap_or( BenchRes::Error ), d_2.unwrap_or( BenchRes::Error )
-        ) ;
-        if d_1.is_err() && d_2.is_err() {
-          dble_errors += 1
-        }
-        if d_1.is_tmo() && d_2.is_tmo() {
-          dble_timeouts += 1
-        }
-
-        let time_1 = d_1.map(
-          |time, _| time,
-          || {
-            timeouts_1 += 1 ;
-            tmo_time_1
-          },
-          || {
-            errors_1 += 1 ;
-            is_error = true ;
-            error_time_1
-          }
-        ) ;
-        let time_2 = d_2.map(
-          |time, _| time,
-          || {
-            timeouts_2 += 1 ;
-            tmo_time_2
-          },
-          || {
-            errors_2 += 1 ;
-            is_error = true ;
-            error_time_2
-          }
-        ) ;
-
-        if ! conf.no_errors || conf.errs_as_tmos || ! is_error {
-          file.write_all(
-            format!(
-              "{} {}\n", time_1.as_sec_str(), time_2.as_sec_str()
-            ).as_bytes()
-          ).chain_err(
-            || format!(
-              "while writing to comparative data file `{}`",
-              conf.emph(& data_file)
-            )
-          ) ?
-        }
-      },
+  for (bench, res_1) in res_1.res.drain() {
+    if let Some(res_2) = res_2.res.remove(& bench) {
+      if res_1.is_tmo() && res_2.is_tmo() {
+        dble_tmos += 1
+      } else if res_1.is_err() && res_2.is_err() {
+        dble_errs += 1
+      }
+      writeln!(
+        data_file, "{} {}", res_1.map(
+          |time, _| time, || tmo_time, || err_time
+        ).as_sec_str(), res_2.map(
+          |time, _| time, || tmo_time, || err_time
+        ).as_sec_str()
+      ).chain_err(
+        || format!(
+          "while writing to comparative data file `{}`",
+          conf.sad( data_file_path.to_string_lossy() )
+        )
+      ) ?
+    } else {
+      not_in_res_2.push(bench)
     }
   }
 
-
-  let min_time = ::std::cmp::min(
-    data_1.min_time(), data_2.min_time()
-  ) ;
-  let min_time = min_time - min_time / 10 ;
+  if ! not_in_res_2.is_empty() || ! res_2.res.is_empty() {
+    warn!(
+      conf => {
+        if ! not_in_res_2.is_empty() {
+          warn!(
+            conf, line =>
+              "found {} benchmarks in `{}`'s data that are not in `{}`'s",
+              conf.sad(& format!("{}", not_in_res_2.len())),
+              conf.emph(& res_1.tool.name),
+              conf.emph(& res_2.tool.name)
+          )
+        }
+        if ! res_2.res.is_empty() {
+          warn!(
+            conf, line =>
+              "found {} benchmarks in `{}`'s data that are not in `{}`'s",
+              conf.sad(& format!("{}", res_2.res.len())),
+              conf.emph(& res_2.tool.name),
+              conf.emph(& res_1.tool.name)
+          )
+        }
+      }
+    )
+  }
 
 
   let output_file = {
@@ -227,42 +173,39 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
     )
   ) ? ;
 
-  let _title = if timeouts_1 + errors_1 + timeouts_2 + errors_2 > 0 {
-    let mut title = format!(
-      "\
-        {}: {} timeouts and {} errors\\n\
-        {}: {} timeouts and {} errors\
-      ",
-      data_1.tool.name, timeouts_1, errors_1,
-      data_2.tool.name, timeouts_2, errors_2,
-    ) ;
-    if dble_timeouts > 0 {
-      log!{
-        conf => "  {} {}", dble_timeouts, conf.sad("double timeouts")
-      }
-      title = format!(
-        "{}\\n{} double timeouts (both timeout-ed)", title, dble_timeouts
-      )
-    }
-    if dble_errors > 0 {
-      log!{
-        conf => "  {} {}", dble_errors, conf.bad("double errors")
-      }
-      title = format!(
-        "{}\\n{} double errors (both failed)", title, dble_errors
-      )
-    }
-    format!("set title \"{}\"", title)
-  } else { "".into() } ;
-
-  let err_time = error_time_1 ;
-  let tmo_time = tmo_time_1 ;
+  // let _title = if timeouts_1 + errors_1 + timeouts_2 + errors_2 > 0 {
+  //   let mut title = format!(
+  //     "\
+  //       {}: {} timeouts and {} errors\\n\
+  //       {}: {} timeouts and {} errors\
+  //     ",
+  //     data_1.tool.name, timeouts_1, errors_1,
+  //     data_2.tool.name, timeouts_2, errors_2,
+  //   ) ;
+  //   if dble_timeouts > 0 {
+  //     log!{
+  //       conf => "  {} {}", dble_timeouts, conf.sad("double timeouts")
+  //     }
+  //     title = format!(
+  //       "{}\\n{} double timeouts (both timeout-ed)", title, dble_timeouts
+  //     )
+  //   }
+  //   if dble_errors > 0 {
+  //     log!{
+  //       conf => "  {} {}", dble_errors, conf.bad("double errors")
+  //     }
+  //     title = format!(
+  //       "{}\\n{} double errors (both failed)", title, dble_errors
+  //     )
+  //   }
+  //   format!("set title \"{}\"", title)
+  // } else { "".into() } ;
 
   // println!("err time: {}, tmo time: {}", err_time, tmo_time) ;
 
   let (
     vert_err_line, horz_err_line, max_range
-  ) = if conf.no_errors || conf.errs_as_tmos {
+  ) = if ! has_errs {
     ( "".to_string(), "".to_string(), (tmo_time + tmo_time / 10).as_sec_str() )
   } else {(
     format!(
@@ -308,13 +251,13 @@ plot \\
   '{}' using 1:2 notitle with points ls 1
 \
         ", output_file,
-        data_1.tool.graph, data_2.tool.graph,
+        res_1.tool.graph, res_2.tool.graph,
         min_time.as_sec_str(), max_range,
         min_time.as_sec_str(), max_range,
         tmo_time.as_sec_str(), tmo_time.as_sec_str(),
         vert_err_line,
         tmo_time.as_sec_str(), horz_err_line,
-        data_file
+        data_file_path.to_string_lossy()
       ).as_bytes()
     )
   ).chain_err(

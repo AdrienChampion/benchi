@@ -154,7 +154,7 @@ pub mod dump {
 
     println!("testing `cmd_re`") ;
     let tmp = format!(
-      "{} {}: command args `eval` | piped 'blah'", * dmp_pref, new_cmd_key
+      r#"{} {}: "command args `eval` | piped 'blah'""#, * dmp_pref, new_cmd_key
     ) ;
     let res = cmd_re.captures(& tmp).unwrap() ;
     assert_eq!(& res["cmd"], "command args `eval` | piped 'blah'") ;
