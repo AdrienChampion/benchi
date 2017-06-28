@@ -924,57 +924,6 @@ impl<T> FromIterator<T> for ToolVec<T> {
 
 
 
-/// A spanned thing.
-#[derive(Clone, Debug)]
-pub struct Spnd<T> {
-  val: T,
-  start: usize,
-  len: usize,
-}
-unsafe impl<T: Sync> Sync for Spnd<T> {}
-impl AsRef<str> for Spnd<String> {
-  fn as_ref(& self) -> & str {
-    & self.val
-  }
-}
-impl<T: fmt::Display> fmt::Display for Spnd<T> {
-  fn fmt(& self, fmt: & mut fmt::Formatter) -> fmt::Result {
-    write!(fmt, "{}", self.val)
-  }
-}
-impl<T> Spnd<T> {
-  /// Creates a spanned thing.
-  #[inline]
-  pub fn mk(val: T, start: usize, len: usize) -> Self {
-    Spnd { val, start, len }
-  }
-  /// Extracts the value.
-  #[inline]
-  pub fn xtract(self) -> T {
-    self.val
-  }
-  /// Length.
-  #[inline]
-  pub fn len(& self) -> usize {
-    self.len
-  }
-  /// Start position.
-  #[inline]
-  pub fn start(& self) -> usize {
-    self.start
-  }
-  /// Map.
-  #[inline]
-  pub fn map<U, F: Fn(T) -> U>(self, f: F) -> Spnd<U> {
-    Spnd { val: f(self.val), start: self.start, len: self.len }
-  }
-}
-impl<T> ::std::ops::Deref for Spnd<T> {
-  type Target = T ;
-  fn deref(& self) -> & T {
-    & self.val
-  }
-}
 
 
 /// Extends `Duration`.

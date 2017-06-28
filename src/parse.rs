@@ -104,125 +104,80 @@ impl ToolConfBuilder {
   }
 }
 
-macro_rules! byte_cnt {
-  ($i:expr, $( $stuff:tt )+ ) => (
-    map!( $i, $($stuff)+, |bytes: & [u8]| bytes.len() )
-  ) ;
+named!{
+  #[doc = "Comment parser."],
+  comment, re_bytes_find!(r"^#[^\n]*\n")
 }
+
 
 named!{
-  comment<usize>, byte_cnt!( re_bytes_find!(r"^#[^\n]*\n") )
-}
-
-
-fn spc_cmt(
-  bytes: & [u8]
-) -> IResult<& [u8], usize> {
-  let mut len = 0 ;
-  map!(
-    bytes,
-    many1!(
-      map!(
-        alt_complete!(
-          comment | byte_cnt!(multispace)
-        ),
-        |add| len += add
+  #[doc = "Space parser"],
+  spc_cmt<()>, map!(
+    many0!(
+      alt_complete!(
+        comment | multispace
       )
-    ),
-    |_| len
+    ), |_| ()
   )
 }
 
 named!{
-  opt_spc_cmt<usize>, map!(
-    opt!( complete!(spc_cmt) ), |opt: Option<usize>| opt.unwrap_or(0)
+  #[doc = "Raw string parser."],
+  raw_string<String>, map_res!(
+    do_parse!(
+      tag!("```") >>
+      raw: take_until_s!("```") >>
+      tag!("```") >> (raw)
+    ), |bytes| from_utf8(bytes).map(|s| s.to_string())
   )
 }
 
-/// Raw string parser.
-fn raw_string(bytes: & [u8], cnt: usize) -> IResult<& [u8], Spnd<String>> {
-  map!(
-    bytes,
-    map_res!(
-      do_parse!(
-        tag!("```") >>
-        raw: take_until_s!("```") >>
-        tag!("```") >> (raw)
-      ), |bytes| from_utf8(bytes).map(|s| (s, bytes.len()))
-    ),
-    |(s, len): (& str, usize)| Spnd::mk(s.to_string(), cnt, len + 6)
-  )
-}
-
-/// Ident parser.
-fn ident<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult<& 'a [u8], Spnd<String>> {
-  map_res!(
-    bytes,
+named!{
+  #[doc = "Ident parser."],
+  ident<String>, map_res!(
     re_bytes_find!(r"^[a-zA-Z0-9_\-.]+"),
-    |bytes: & 'a [u8]| from_utf8(bytes).map(
-      |s: & 'a str| ( Spnd::mk(s.to_string(), cnt, bytes.len()) )
-    )
+    |bytes: & 'a [u8]| from_utf8(bytes).map( |s| s.to_string() )
   )
 }
 
-/// Unquoted string parser. Parses anything but `\n{}"/`.
-fn string<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult<& 'a [u8], Spnd<String>> {
-  map_res!(
-    bytes,
+named!{
+  #[doc = r#"Unquoted string parser. Parses anything but `\n{}"/`."#],
+  string<String>, map_res!(
     re_bytes_find!(r#"^[^\n{}"/]+"#),
     |bytes: & 'a [u8]| from_utf8(bytes).map(
-      |s: & 'a str| ( Spnd::mk(s.trim().to_string(), cnt, bytes.len()) )
+      |s: & 'a str| s.trim().to_string()
     )
   )
 }
 
-/// Quoted string parser.
-fn quoted_string<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult< & 'a [u8], Spnd< Vec<String> > > {
-  let mut len = 2 ; // `2` because of the surrounding quotes.
-  map!(
-    bytes,
-    delimited!(
-      char!('"'),
-      many0!(
+named!{
+  #[doc = "Quoted string parser."],
+  quoted_string< Vec<String> >, delimited!(
+    char!('"'),
+    many0!(
+      terminated!(
         map_res!(
-          do_parse!(
-            bytes: is_not!("\n\"") >>
-            nl: opt!( char!('\n') ) >> ({
-              len += nl.map(|_| 1).unwrap_or(0) + bytes.len() ;
-              bytes
-            })
-          ), |bytes| from_utf8(bytes).map(|s| s.trim().to_string())
-        )
-      ),
-      char!('"')
+          is_not!("\n\""), |bytes| from_utf8(bytes).map(
+            |s| s.trim().to_string()
+          )
+        ),
+        opt!( char!('\n') )
+      )
     ),
-    |vec: Vec<String>| Spnd::mk(vec, cnt, len)
+    char!('"')
   )
 }
 
-/// Parses some options.
-fn options<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult< & 'a [u8], Spnd< Vec<String> > > {
-  let mut len = 0 ;
-  do_parse!(
-    bytes,
-    map!( tag!("options"), |bytes: & [u8]| len += bytes.len() ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!(':'), |_| len += 1 ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    opts: map!(
-      apply!( quoted_string, cnt+len ),
-      |q: Spnd< Vec<String> >| { len += q.len() ; q.xtract() }
-    ) >> (
-      Spnd::mk(opts, cnt, len)
-    )
+named!{
+  #[doc = "Parses some options."],
+  options< Vec<String> >, preceded!(
+    do_parse!(
+      tag!("options") >>
+      spc_cmt >>
+      char!(':') >>
+      spc_cmt >> (())
+    ),
+    quoted_string
   )
 }
 
@@ -230,7 +185,7 @@ fn options<'a>(
 named!{
   signed_int< Res<i32> >, do_parse!(
     sign: opt!( char!('-') ) >>
-    opt_spc_cmt >>
+    spc_cmt >>
     num: re_bytes_find!( r"^[0-9][0-9]*" ) >> (
       from_utf8(num).chain_err(
         || format!("non utf8 string during signed int parsing")
@@ -257,25 +212,25 @@ fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
     opt!(
       do_parse!(
         tag!(dump::vald_conf_key) >>
-        opt_spc_cmt >>
+        spc_cmt >>
         char!('{') >>
-        opt_spc_cmt >>
+        spc_cmt >>
         many0!(
           do_parse!(
             tag!(dump::vald_conf_suc_key) >>
-            opt_spc_cmt >>
+            spc_cmt >>
             char!(':') >>
-            opt_spc_cmt >>
+            spc_cmt >>
             code: signed_int >>
-            opt_spc_cmt >>
+            spc_cmt >>
             char!(',') >>
-            opt_spc_cmt >>
-            alias: map!( apply!(ident, 0), |s: Spnd<String>| s.xtract()) >>
-            opt_spc_cmt >>
+            spc_cmt >>
+            alias: ident >>
+            spc_cmt >>
             char!(',') >>
-            opt_spc_cmt >>
-            desc: map!( apply!(string, 0), |s: Spnd<String>| s.xtract()) >>
-            opt_spc_cmt >> (
+            spc_cmt >>
+            desc: string >>
+            spc_cmt >> (
               match code {
                 Ok(code) => {
                   vald_conf = vald_conf.and_then(
@@ -299,109 +254,88 @@ fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
 
 /// Parses a tool conf field.
 fn tool_conf_field<'a, 'b>(
-  bytes: & 'a [u8], builder: & 'b mut ToolConfBuilder, cnt: usize
-) -> IResult< & 'a [u8], Res<usize> > {
-  let mut len = 0 ;
-  map!(
+  bytes: & 'a [u8], builder: & 'b mut ToolConfBuilder
+) -> IResult< & 'a [u8], Res<()> > {
+  alt_complete!(
     bytes,
-    alt_complete!(
 
-      do_parse!(
-        map!(
-          tag!(dump::short_name_key), |b: & 'a [u8]| len = b.len()
-        ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        map!( char!(':'), |_| len += 1 ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        short: apply!(ident, cnt + len) >> ({
-          len += short.len() ;
-          builder.set_short( short.xtract() )
-        })
-      ) |
-
-      do_parse!(
-        map!( tag!(dump::cmd_key), |b: & 'a [u8]| len = b.len() ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        map!( char!(':'), |_| len += 1 ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        cmd: apply!(quoted_string, cnt + len) >> ({
-          len += cmd.len() ;
-          let cmd = {
-            let mut iter = cmd.xtract().into_iter() ;
-            if let Some(mut s) = iter.next() {
-              for next in iter {
-                s = format!("{} {}", s, next)
-              }
-              vec![s]
-            } else {
-              vec![]
-            }
-          } ;
-          builder.set_cmd(cmd)
-        })
-      ) |
-
-      do_parse!(
-        map!(
-          tag!(dump::graph_name_key), |b: & 'a [u8]| len = b.len()
-        ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        map!( char!(':'), |_| len += 1 ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        graph: apply!(string, cnt + len) >> ({
-          len += graph.len() ;
-          builder.set_graph( graph.xtract() )
-        })
-      ) |
-
-      do_parse!(
-        map!(
-          tag!(dump::vald_key), |b: & 'a [u8]| len = b.len()
-        ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        map!( char!(':'), |_| len += 1 ) >>
-        map!( opt_spc_cmt, |add| len += add ) >>
-        validator: apply!(raw_string, cnt + len) >> ({
-          len += validator.len() ;
-          builder.set_validator( validator.xtract() )
-        })
+    do_parse!(
+      tag!(dump::short_name_key) >>
+      spc_cmt >>
+      char!(':') >>
+      spc_cmt >>
+      short: ident >> (
+        builder.set_short( short )
       )
+    ) |
 
-    ),
-    |res: Res<()>| res.map(|()| len)
+    do_parse!(
+      tag!(dump::cmd_key) >>
+      spc_cmt >>
+      char!(':') >>
+      spc_cmt >>
+      cmd: quoted_string >> ({
+        let cmd = {
+          let mut iter = cmd.into_iter() ;
+          if let Some(mut s) = iter.next() {
+            for next in iter {
+              s = format!("{} {}", s, next)
+            }
+            vec![s]
+          } else {
+            vec![]
+          }
+        } ;
+        builder.set_cmd(cmd)
+      })
+    ) |
+
+    do_parse!(
+      tag!(dump::graph_name_key) >>
+      spc_cmt >>
+      char!(':') >>
+      spc_cmt >>
+      graph: string >> (
+        builder.set_graph( graph )
+      )
+    ) |
+
+    do_parse!(
+      tag!(dump::vald_key) >>
+      spc_cmt >>
+      char!(':') >>
+      spc_cmt >>
+      validator: raw_string >> (
+        builder.set_validator( validator )
+      )
+    )
+
   )
 }
 
 /// Parses a tool configuration.
-fn tool_conf<'a>(
-  bytes: & 'a [u8], cnt: usize
-) -> IResult< & 'a [u8], (Res<ToolConf>, usize) > {
-  let mut len = 0 ;
+fn tool_conf<'a>(bytes: & 'a [u8]) -> IResult< & 'a [u8], Res<ToolConf> > {
   let mut builder = None ;
   do_parse!(
     bytes,
     map!(
-      apply!(string, cnt + len),
-      |name: Spnd<String>| {
-        len += name.len() ;
-        builder = Some(
-          ToolConfBuilder::of_name( name.xtract() )
-        )
-      }
+      string, |name: String| builder = Some(
+        ToolConfBuilder::of_name(name)
+      )
     ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
-    map!( char!('{'), |_| len += 1 ) >>
-    map!( opt_spc_cmt, |add| len += add ) >>
+    spc_cmt >>
+    char!('{') >>
+    spc_cmt >>
     many0!(
       terminated!(
         apply!(
-          tool_conf_field, builder.as_mut().unwrap(), cnt + len
+          tool_conf_field, builder.as_mut().unwrap()
         ),
-        map!( opt_spc_cmt, |add| len += add )
+        spc_cmt
       )
     ) >>
-    map!( char!('}'), |_| len += 1 ) >> (
-      (builder.unwrap().to_conf(), len)
+    char!('}') >> (
+      builder.unwrap().to_conf()
     )
   )
 }
@@ -412,28 +346,17 @@ fn tool_confs<'a>(
 ) -> IResult<
   & 'a [u8], ( Vec<String>, Res<ValdConf>, Vec<Res<ToolConf>> )
 > {
-  let mut cnt = 0 ;
   do_parse!(
     bytes,
-    map!( opt_spc_cmt, |add| cnt += add ) >>
-    opts: opt!(
-      map!(
-        apply!( options, cnt ),
-        |opts: Spnd< Vec<String> >| { cnt += opts.len() ; opts }
-      )
-    ) >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
+    opts: opt!(options) >>
+    spc_cmt >>
     vald_conf: validator_conf >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
     vec: many1!(
-      map!(
-        terminated!(
-          apply!(tool_conf, cnt),
-          map!( opt_spc_cmt, |add| cnt += add )
-        ), |(tool, len)| { cnt += len ; tool }
-      )
+      terminated!(tool_conf, spc_cmt)
     ) >> (
-      ( opts.map(|o| o.xtract()).unwrap_or(vec![]), vald_conf, vec )
+      ( opts.unwrap_or(vec![]), vald_conf, vec )
     )
   )
 }
@@ -545,7 +468,7 @@ named!{
   #[doc = "Parses a BenchRes."],
   bench_res< Res<(usize, String, BenchRes)> >, do_parse!(
     index: uint >>
-    opt_spc_cmt >>
+    spc_cmt >>
     char!('"') >>
     name: map!(
       re_bytes_find!(r#"^[^"]*"#),
@@ -554,7 +477,7 @@ named!{
       )
     ) >>
     char!('"') >>
-    opt_spc_cmt >>
+    spc_cmt >>
     bench_res: alt_complete!(
       map!(
         tag!(data::timeout_res), |_| Ok(BenchRes::Timeout)
@@ -568,7 +491,7 @@ named!{
         )
       )
     ) >>
-    opt_spc_cmt >>
+    spc_cmt >>
     code: code_opt >> (
       index.and_then(
         |index| usize::from_str(index).chain_err(
@@ -602,30 +525,24 @@ named!{
 fn parse_dump<'a>(
   bytes: & 'a [u8], file: String, run_res: & mut RunRes
 ) -> IResult<& 'a [u8], Res<ToolRes>> {
-  let mut cnt = 0 ;
   let mut benchs: HashMap<BenchIndex,_> = HashMap::new() ;
   do_parse!(
     bytes,
-    map!( opt_spc_cmt, |add| cnt += add ) >>
-    tool: map!(
-      apply!(tool_conf, cnt), |(tool, len)| {
-        cnt += len ;
-        tool
-      }
-    ) >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
+    tool: tool_conf >>
+    spc_cmt >>
     vald_conf: validator_conf >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
     tag!(dump::timeout_key) >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
     char!(':') >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
     timeout: duration >>
-    map!( opt_spc_cmt, |add| cnt += add ) >>
+    spc_cmt >>
     bench_lines: many0!(
       do_parse!(
         data: bench_res >>
-        opt_spc_cmt >> (
+        spc_cmt >> (
           data.and_then(
             |(index, name, res)| run_res.check_bench_index(
               index.into(), name
