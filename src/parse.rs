@@ -11,6 +11,33 @@ use common::res::* ;
 use consts::{ data, dump } ;
 
 
+/// Empty result, used as the rest for some parser results.
+#[cfg(test)]
+static nothing: [ u8 ; 0 ] = [] ;
+
+/// Checks that a parser is successful on some input.
+#[cfg(test)]
+macro_rules! test_success {
+  ($(;)*) => (()) ;
+  ($p:ident $e:expr => $res:expr ; $($tail:tt)*) => ({
+    use nom::IResult::* ;
+    let data = $e ;
+    println!("  testing `{}`", data) ;
+    assert_eq!{
+      $p( data.as_bytes() ), Done(& nothing as & [u8], $res)
+    }
+    test_success!{ $($tail)* }
+  }) ;
+  ($p:ident $e:expr => $rest:expr, $res:expr ; $($tail:tt)*) => ({
+    use nom::IResult::* ;
+    let data = $e ;
+    println!("  testing `{}`", data) ;
+    assert_eq!{
+      $p( data.as_bytes() ), Done($rest.as_bytes(), $res)
+    }
+    test_success!{ $($tail)* }
+  }) ;
+}
 
 
 
@@ -106,12 +133,26 @@ impl ToolConfBuilder {
 
 named!{
   #[doc = "Comment parser."],
-  comment, re_bytes_find!(r"^#[^\n]*\n")
+  comment, re_bytes_find!(r"^#[^\n]*\n*")
 }
 
 
+
+
+
+
+#[test]
+fn t_spc_cmt() {
+  test_success!{
+    spc_cmt "#   " => () ;
+    spc_cmt "  \t#   " => () ;
+    spc_cmt "  \t#  \n " => () ;
+    spc_cmt "  \t#  \n       blah" => "blah", () ;
+  }
+}
+
 named!{
-  #[doc = "Space parser"],
+  #[doc = "Space and comments parser"],
   spc_cmt<()>, map!(
     many0!(
       alt_complete!(
@@ -121,37 +162,94 @@ named!{
   )
 }
 
-named!{
-  #[doc = "Raw string parser."],
-  raw_string<String>, map_res!(
-    do_parse!(
-      tag!("```") >>
-      raw: take_until_s!("```") >>
-      tag!("```") >> (raw)
-    ), |bytes| from_utf8(bytes).map(|s| s.to_string())
-  )
+
+
+
+
+
+
+#[test]
+fn t_ident() {
+  test_success!{
+    ident "blah" => "blah".to_string() ;
+    ident "bl7_ah" => "bl7_ah".to_string() ;
+  }
 }
 
 named!{
   #[doc = "Ident parser."],
   ident<String>, map_res!(
-    re_bytes_find!(r"^[a-zA-Z0-9_\-.]+"),
+    re_bytes_find!(r"^[a-zA-Z][a-zA-Z0-9_]*"),
     |bytes: & 'a [u8]| from_utf8(bytes).map( |s| s.to_string() )
   )
 }
 
+
+
+
+
+
+#[test]
+fn t_string() {
+  test_success!{
+    string "blah" => "blah".to_string() ;
+    string "anything &]+)=[]![+)&[]+'\t |?^`8%~" =>
+      "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ;
+    string "     the   string gets cropped \t  " =>
+      "the   string gets cropped".to_string() ;
+    string "anything but# pound sign" =>
+      "# pound sign", "anything but".to_string() ;
+    string "anything but\n new line" =>
+      "\n new line", "anything but".to_string() ;
+    string "anything but\" double quote" =>
+      "\" double quote", "anything but".to_string() ;
+    string "anything but{ curly brace" =>
+      "{ curly brace", "anything but".to_string() ;
+    string "anything but} curly brace" =>
+      "} curly brace", "anything but".to_string() ;
+    string "anything but} curly brace" =>
+      "} curly brace", "anything but".to_string() ;
+  }
+}
+
 named!{
-  #[doc = r#"Unquoted string parser. Parses anything but `\n{}"/`."#],
+  #[doc = r#"Unquoted string parser. Parses anything but `#\n{}"`."#],
   string<String>, map_res!(
-    re_bytes_find!(r#"^[^\n{}"/]+"#),
+    re_bytes_find!(r#"^[^#\n{}"]+"#),
     |bytes: & 'a [u8]| from_utf8(bytes).map(
       |s: & 'a str| s.trim().to_string()
     )
   )
 }
 
+
+
+
+
+
+
+#[test]
+fn t_quoted_string() {
+  test_success!{
+    quoted_string "\"blah\"" =>
+      vec![ "blah".to_string() ] ;
+    quoted_string "\"anything &]+)=[]![+)&[]+'\t |?^`8%~\"" =>
+      vec![ "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ] ;
+    quoted_string "\"stops at\" double quote\"" =>
+      " double quote\"", vec![ "stops at".to_string() ] ;
+    quoted_string "\"     the   string gets cropped \t  \"" =>
+      vec![ "the   string gets cropped".to_string() ] ;
+    quoted_string "\"  multi lines  \n is fine\nand cropped\t \t\"" =>
+      vec![
+        "multi lines".to_string(),
+        "is fine".to_string(),
+        "and cropped".to_string(),
+      ] ;
+  }
+}
+
 named!{
-  #[doc = "Quoted string parser."],
+  #[doc = r#"Quoted string parser, parses anything but `"`."#],
   quoted_string< Vec<String> >, delimited!(
     char!('"'),
     many0!(
@@ -168,6 +266,33 @@ named!{
   )
 }
 
+
+
+
+#[test]
+fn t_raw_string() {
+  test_success!{
+    raw_string "``````" => "".to_string() ;
+    raw_string "```yeah```" => "yeah".to_string() ;
+    raw_string "```   something\n\nsomething else :)#  ```" =>
+      "   something\n\nsomething else :)#  ".to_string() ;
+    raw_string r#"``` everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% ```"# =>
+      r#" everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% "#.to_string() ;
+  }
+}
+
+named!{
+  #[doc = "Raw string parser."],
+  raw_string<String>, map_res!(
+    do_parse!(
+      tag!("```") >>
+      raw: take_until_s!("```") >>
+      tag!("```") >> (raw)
+    ), |bytes| from_utf8(bytes).map(|s| s.to_string())
+  )
+}
+
+
 named!{
   #[doc = "Parses some options."],
   options< Vec<String> >, preceded!(
@@ -180,6 +305,8 @@ named!{
     quoted_string
   )
 }
+
+
 
 /// Parses a signed integer.
 named!{
@@ -202,6 +329,8 @@ named!{
     )
   )
 }
+
+
 
 
 /// Parses a validator conf.
@@ -610,3 +739,5 @@ pub fn dump(
     ),
   }
 }
+
+
