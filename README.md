@@ -4,22 +4,31 @@
 
 
 
-# Features
+# Features (short term)
 
 Running:
 
 - [x] dispatch benchmarks in parallel
 - [x] for each benchmark dispatched, dispatch tools in parallel
 - [x] log stdout of the tools, and stderr if non-empty
-- [ ] retrieve and log user-defined data from runs (memory usage, something from the output, *etc.*)
-- [ ] validate tool runs individually and against each other with user-defined validators (if any is provided)
+- [x] validate tool runs individually and against each other with user-defined validators
 
 Analyzing data:
 
 - [x] cumulative plot of some or all of the tools
 - [x] comparative plot of two of the tools
-- [ ] customizable LaTeX `tabular` generation
+- [x] comparative plot distinguishing between validation status
+- [ ] produce super cool breakdown of the data in markdown
 - [ ] customizable markdown table generation
+
+
+# Features (maybe)
+
+Running:
+- [ ] retrieve and log user-defined data from runs (memory usage, something from the output, *etc.*)
+
+Analyzing data:
+- [ ] customizable LaTeX `tabular` generation
 - [ ] interactive data exploration
 
 
