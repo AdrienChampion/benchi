@@ -22,7 +22,6 @@ pub mod common ;
 pub mod clap ;
 pub mod parse ;
 pub mod run ;
-pub mod loading ;
 pub mod plot ;
 pub mod inspect ;
 

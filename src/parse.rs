@@ -8,6 +8,7 @@ use nom::{ IResult, multispace } ;
 use errors::* ;
 use common::* ;
 use common::res::* ;
+use consts::{ data, dump } ;
 
 
 
@@ -255,13 +256,13 @@ fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
     bytes,
     opt!(
       do_parse!(
-        tag!("validators") >>
+        tag!(dump::vald_conf_key) >>
         opt_spc_cmt >>
         char!('{') >>
         opt_spc_cmt >>
         many0!(
           do_parse!(
-            tag!("success") >>
+            tag!(dump::vald_conf_suc_key) >>
             opt_spc_cmt >>
             char!(':') >>
             opt_spc_cmt >>
@@ -306,7 +307,9 @@ fn tool_conf_field<'a, 'b>(
     alt_complete!(
 
       do_parse!(
-        map!( tag!("short"), |b: & 'a [u8]| len = b.len() ) >>
+        map!(
+          tag!(dump::short_name_key), |b: & 'a [u8]| len = b.len()
+        ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
         map!( char!(':'), |_| len += 1 ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
@@ -317,7 +320,7 @@ fn tool_conf_field<'a, 'b>(
       ) |
 
       do_parse!(
-        map!( tag!("cmd"), |b: & 'a [u8]| len = b.len() ) >>
+        map!( tag!(dump::cmd_key), |b: & 'a [u8]| len = b.len() ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
         map!( char!(':'), |_| len += 1 ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
@@ -339,7 +342,9 @@ fn tool_conf_field<'a, 'b>(
       ) |
 
       do_parse!(
-        map!( tag!("graph"), |b: & 'a [u8]| len = b.len() ) >>
+        map!(
+          tag!(dump::graph_name_key), |b: & 'a [u8]| len = b.len()
+        ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
         map!( char!(':'), |_| len += 1 ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
@@ -350,7 +355,9 @@ fn tool_conf_field<'a, 'b>(
       ) |
 
       do_parse!(
-        map!( tag!("validator"), |b: & 'a [u8]| len = b.len() ) >>
+        map!(
+          tag!(dump::vald_key), |b: & 'a [u8]| len = b.len()
+        ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
         map!( char!(':'), |_| len += 1 ) >>
         map!( opt_spc_cmt, |add| len += add ) >>
@@ -550,10 +557,10 @@ named!{
     opt_spc_cmt >>
     bench_res: alt_complete!(
       map!(
-        tag!("timeout"), |_| Ok(BenchRes::Timeout)
+        tag!(data::timeout_res), |_| Ok(BenchRes::Timeout)
       ) |
       map!(
-        tag!("error"), |_| Ok(BenchRes::Error)
+        tag!(data::error_res), |_| Ok(BenchRes::Error)
       ) |
       map!(
         duration, |d: Res<Duration>| d.map(
@@ -609,7 +616,7 @@ fn parse_dump<'a>(
     map!( opt_spc_cmt, |add| cnt += add ) >>
     vald_conf: validator_conf >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
-    tag!("timeout") >>
+    tag!(dump::timeout_key) >>
     map!( opt_spc_cmt, |add| cnt += add ) >>
     char!(':') >>
     map!( opt_spc_cmt, |add| cnt += add ) >>

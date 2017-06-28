@@ -103,179 +103,32 @@ pub mod subst {
 
 /// Bench data dumping.
 pub mod dump {
-  use regex::Regex ;
-
   /// Comment prefix.
   pub static cmt_pref: & str = "#" ;
-
-  lazy_static!{
-    #[doc = "Dump prefix (double comment prefix)."]
-    pub static ref dmp_pref: String = format!("{}{}", cmt_pref, cmt_pref) ;
-  }
-
   #[doc = "Key for short names."]
-  pub static new_short_name_key: & str = "short" ;
+  pub static short_name_key: & str = "short" ;
   #[doc = "Key for graph names."]
-  pub static new_graph_name_key: & str = "graph" ;
+  pub static graph_name_key: & str = "graph" ;
   #[doc = "Key for commands."]
-  pub static new_cmd_key: & str = "cmd" ;
+  pub static cmd_key: & str = "cmd" ;
   #[doc = "Key for timeouts."]
-  pub static new_timeout_key: & str = "timeout" ;
-  #[doc = "Key for validator file."]
-  pub static new_vald_file_key: & str = "validator" ;
-  #[doc = "Key for validators."]
-  pub static new_vald_key: & str = "success" ;
-
-  #[test]
-  fn regexes() {
-    println!("testing `empty_cmt_line`") ;
-    assert!( empty_cmt_line.is_match("#  ") ) ;
-    assert!( empty_cmt_line.is_match("#    ") ) ;
-    assert!( ! empty_cmt_line.is_match("##  whatevs  ") ) ;
-
-    println!("testing `name_re`") ;
-    let tmp = format!("{} tool-Name 71", * dmp_pref) ;
-    let res = name_re.captures(& tmp).unwrap() ;
-    assert_eq!(& res["name"], "tool-Name 71") ;
-
-    println!("testing `short_name_re`") ;
-    let tmp = format!(
-      "{} {}: tool-SHORT_Name_71", * dmp_pref, new_short_name_key
-    ) ;
-    let res = short_name_re.captures(& tmp).unwrap() ;
-    assert_eq!(& res["short"], "tool-SHORT_Name_71") ;
-
-    println!("testing `graph_name_re`") ;
-    let tmp = format!(
-      "{} {}: tool GRAPH Name_71", * dmp_pref, new_graph_name_key
-    ) ;
-    let res = graph_name_re.captures(& tmp).unwrap() ;
-    assert_eq!(& res["graph"], "tool GRAPH Name_71") ;
-
-    println!("testing `cmd_re`") ;
-    let tmp = format!(
-      r#"{} {}: "command args `eval` | piped 'blah'""#, * dmp_pref, new_cmd_key
-    ) ;
-    let res = cmd_re.captures(& tmp).unwrap() ;
-    assert_eq!(& res["cmd"], "command args `eval` | piped 'blah'") ;
-
-    println!("testing `timeout_re`") ;
-    let tmp = format!("{} {}: 743044.123456789", * dmp_pref, new_timeout_key) ;
-    let res = timeout_re.captures(& tmp).unwrap() ;
-    assert_eq!( & res["secs"], "743044" ) ;
-    assert_eq!( & res["nanos"], "123456789" )
-  }
-  
-  lazy_static!{
-
-    #[doc = "Key for short names."]
-    pub static ref short_name_key: String = format!(
-      "{} short: ", cmt_pref
-    ) ;
-    #[doc = "Key for graph names."]
-    pub static ref graph_name_key: String = format!(
-      "{} graph: ", cmt_pref
-    ) ;
-    #[doc = "Key for commands."]
-    pub static ref cmd_key: String = format!(
-      "{} cmd: ", cmt_pref
-    ) ;
-    #[doc = "Key for timeouts."]
-    pub static ref timeout_key: String = format!(
-      "{} timeout: ", cmt_pref
-    ) ;
-    #[doc = "Key for validators."]
-    pub static ref vald_key: String = format!(
-      "{} success: ", cmt_pref
-    ) ;
-
-    #[doc = "Matches a comment line that's not part of the dump info."]
-    pub static ref empty_cmt_line: Regex = Regex::new(
-      & format!(r"^{}[^{}]", cmt_pref, cmt_pref)
-    ).expect(
-      "problem in `empty_cmt_line` static regex"
-    ) ;
-
-    #[doc = "Matches the name of tool from a dump."]
-    pub static ref name_re: Regex = Regex::new(
-      & format!(
-        r"^{}\s*(?P<name>[a-zA-Z][a-zA-Z0-9\s-_]*)\s*$", * dmp_pref
-      )
-    ).expect(
-      "problem in `name_re` static regex"
-    ) ;
-    #[doc = "Matches the short name of a tool from a dump as `short`."]
-    pub static ref short_name_re: Regex = Regex::new(
-      & format!(
-        r"^{}\s*{}\s*:\s*(?P<short>[a-zA-Z][a-zA-Z0-9-_]*)\s*$",
-        * dmp_pref, new_short_name_key
-      )
-    ).expect(
-      "problem in `short_name_re` static regex"
-    ) ;
-    #[doc = "Matches the graph name of a tool from a dump as `graph`."]
-    pub static ref graph_name_re: Regex = Regex::new(
-      & format!(
-        r"^{}\s*{}\s*:\s*(?P<graph>[a-zA-Z][a-zA-Z0-9\s-_]*)\s*$",
-        * dmp_pref, new_graph_name_key
-      )
-    ).expect(
-      "problem in `graph_name_re` static regex"
-    ) ;
-    #[doc = "Matches the command of a tool from a dump as `cmd`."]
-    pub static ref cmd_re: Regex = Regex::new(
-      & format!(
-        r#"^{}\s*{}\s*:\s*"(?P<cmd>.*)"\s*$"#, * dmp_pref, new_cmd_key
-      )
-    ).expect(
-      "problem in `cmd_re` static regex"
-    ) ;
-    #[doc = "
-Matches the timeout of a dump.
-
-Two groups:
-
-- `secs`: seconds,
-- `nanos`: nanoseconds.
-    "]
-    pub static ref timeout_re: Regex = Regex::new(
-      & format!(
-        r"^{}\s*{}\s*:\s*{}$",
-        * dmp_pref, new_timeout_key, & * ::consts::time_re
-      )
-    ).expect(
-      "problem in `timeout` static regex"
-    ) ;
-
-    #[doc = "Matches a validator as `code`, `alias` and `desc`."]
-    pub static ref vald_re: Regex = Regex::new(
-      & format!(
-        r"(?x)^
-          {}\s*{}\s*:\s*
-          (?P<code>[0-9][0-9]*|\-[0-9][0-9]*)\s*,\s*
-          (?P<alias>[a-zA-Z][a-zA-Z0-9_\-.]*)\s*,\s*
-          (?P<desc>.*)\s*
-        $", * dmp_pref, new_vald_key
-      )
-    ).expect(
-      "problem in `vald_re` static regex"
-    ) ;
-    #[doc = "Matches a validator file as `path`."]
-    pub static ref vald_file_re: Regex = Regex::new(
-      & format!(
-        r"^{}\s*{}\s*:\s*(?P<path>_|[^\s]*)\s*$",
-        * dmp_pref, new_vald_file_key
-      )
-    ).expect(
-      "problem in `vald_file_re` static regex"
-    ) ;
-
-  }
+  pub static timeout_key: & str = "timeout" ;
+  #[doc = "Key for the validator."]
+  pub static vald_key: & str = "validator" ;
+  #[doc = "Key for validator conf."]
+  pub static vald_conf_key: & str = "validators" ;
+  #[doc = "Key for validator conf success codes."]
+  pub static vald_conf_suc_key: & str = "success" ;
 }
 
 /// Data-related regexs
 pub mod data {
   use regex::Regex ;
+
+  #[doc = "Indicates a timeout result."]
+  pub static timeout_res: & str = "timeout" ;
+  #[doc = "Indicates an error result."]
+  pub static error_res: & str = "error" ;
 
   #[test]
   fn regexes() {

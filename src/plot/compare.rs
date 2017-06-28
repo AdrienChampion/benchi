@@ -203,6 +203,12 @@ pub fn work(conf: & PlotConf, file_1: String, file_2: String) -> Res<()> {
 
   // println!("err time: {}, tmo time: {}", err_time, tmo_time) ;
 
+  let title = format!(
+    "set title '{} double timeout{}, {} double error{}' font ',13'\n\n",
+    dble_tmos, if dble_tmos == 1 {""} else {"s"},
+    dble_errs, if dble_errs == 1 {""} else {"s"},
+  ) ;
+
   let (
     vert_err_line, horz_err_line, max_range
   ) = if ! has_errs {
@@ -235,7 +241,7 @@ set arrow from {}, graph 0 to {}, graph 1 nohead ls 4\n\
         "
 set output \"{}\"
 
-set xlabel \"{} (seconds, logscale)\" textcolor rgbcolor \"0x000000\"
+{}set xlabel \"{} (seconds, logscale)\" textcolor rgbcolor \"0x000000\"
 set ylabel \"{} (seconds, logscale)\" textcolor rgbcolor \"0x000000\"
 
 set xrange [{}:{}]
@@ -251,6 +257,7 @@ plot \\
   '{}' using 1:2 notitle with points ls 1
 \
         ", output_file,
+        if dble_tmos + dble_errs > 0 { title } else { "".into() },
         res_1.tool.graph, res_2.tool.graph,
         min_time.as_sec_str(), max_range,
         min_time.as_sec_str(), max_range,

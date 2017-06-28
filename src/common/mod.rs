@@ -454,19 +454,19 @@ pub struct ToolConf {
 unsafe impl Sync for ToolConf {}
 impl ToolConf {
   /// Dumps info to a writer.
-  pub fn new_dump_info<W: Write>(
+  pub fn dump_info<W: Write>(
     & self, conf: & Arc<RunConf>, w: & mut W
   ) -> ::std::io::Result<()> {
     use consts::dump::* ;
 
     writeln!(w, "{} {{", self.name) ? ;
     writeln!(
-      w, "  {}: {}", new_short_name_key, self.short
+      w, "  {}: {}", short_name_key, self.short
     ) ? ;
     writeln!(
-      w, "  {}: {}", new_graph_name_key, self.graph
+      w, "  {}: {}", graph_name_key, self.graph
     ) ? ;
-    write!(  w, "  {}: \"", new_cmd_key) ? ;
+    write!(  w, "  {}: \"", cmd_key) ? ;
     let mut iter = self.cmd.iter() ;
     if let Some(s) = iter.next() {
       write!(w, "{}", s) ? ;
@@ -476,7 +476,7 @@ impl ToolConf {
     }
     writeln!(w, "\"") ? ;
     if let Some(path) = conf.validator_path_of(& self) {
-      writeln!(w, "  {}: ```", new_vald_file_key) ? ;
+      writeln!(w, "  {}: ```", vald_key) ? ;
       let file = ::std::fs::OpenOptions::new().read(true).open(& path) ? ;
       for line in BufReader::new(file).lines() {
         writeln!(w, "{}", line ?) ?
@@ -486,153 +486,19 @@ impl ToolConf {
     writeln!(w, "}}") ? ;
 
     if ! conf.vald_conf().is_empty() {
-      writeln!(w, "validators {{") ? ;
+      writeln!(w, "{} {{", vald_conf_key) ? ;
       for (code, info) in conf.validators_iter() {
-        writeln!(w, "  success: {}, {}, {}", code, info.alias, info.desc) ?
+        writeln!(
+          w, "  {}: {}, {}, {}", vald_conf_suc_key, code, info.alias, info.desc
+        ) ?
       }
       writeln!(w, "}}") ? ;
     }
 
     writeln!(
-      w, "{}: {}", new_timeout_key, conf.timeout.as_sec_str()
+      w, "{}: {}", timeout_key, conf.timeout.as_sec_str()
     ) ? ;
     writeln!(w, "{}", & * cmt_pref)
-  }
-
-
-  /// Dumps info to a writer.
-  pub fn dump_info<W: Write>(
-    & self, timeout: & Duration, w: & mut W
-  ) -> ::std::io::Result<()> {
-    use consts::dump::* ;
-
-    writeln!(w, "{} {}", & * dmp_pref, self.name) ? ;
-    writeln!(
-      w, "{} {}: {}", & * dmp_pref, new_short_name_key, self.short
-    ) ? ;
-    writeln!(
-      w, "{} {}: {}", & * dmp_pref, new_graph_name_key, self.graph
-    ) ? ;
-    write!(  w, "{} {}: \"", & * dmp_pref, new_cmd_key) ? ;
-    let mut iter = self.cmd.iter() ;
-    if let Some(s) = iter.next() {
-      write!(w, "{}", s) ? ;
-      for s in iter {
-        write!(w, " {}", s) ?
-      }
-    }
-    writeln!(w, "\"") ? ;
-    write!(
-      w, "{} {}: ", & * dmp_pref, new_vald_file_key
-    ) ? ;
-    if let Some(path) = RunConf::rel_validator_path_of( & self ) {
-      writeln!(w, "{}", path) ?
-    } else {
-      writeln!(w, "_") ?
-    }
-    writeln!(
-      w, "{} {}: {}", & * dmp_pref, new_timeout_key, timeout.as_sec_str()
-    ) ? ;
-    writeln!(w, "{}", & * cmt_pref)
-  }
-  /// Loads a tool configuration from a dump. Returns the number of lines read.
-  pub fn from_dump<Br: BufRead>(
-    lines: & mut LinesIter<Br>, mut line_count: usize
-  ) -> Res<(Self, usize)> {
-    use consts::dump::* ;
-
-    let name = if let Some(line) = lines.next() {
-      line_count += 1 ;
-      let line = line ? ;
-      let len = cmt_pref.len() ;
-      if line.len() < len + 1 || & line[0..len] != & * cmt_pref {
-        bail!(
-          format!(
-            "illegal dump file, first line should be `{} <tool name>`",
-            & * cmt_pref
-          )
-        )
-      } else {
-        line[len..].trim().to_string()
-      }
-    } else {
-      bail!( format!("expected tool name, found nothing") )
-    } ;
-    let short = if let Some(line) = lines.next() {
-      line_count += 1 ;
-      let line = line ? ;
-      let len = short_name_key.len() ;
-      if line.len() < len + 1 || & line[0..len] != * short_name_key {
-        bail!(
-          format!(
-            "illegal dump file, second line should be \
-            `{}<tool short name>`", * short_name_key
-          )
-        )
-      } else {
-        line[len..].trim().to_string()
-      }
-    } else {
-      bail!( format!("expected tool ({}) short name, found nothing", name) )
-    } ;
-    let graph = if let Some(line) = lines.next() {
-      line_count += 1 ;
-      let line = line ? ;
-      let len = graph_name_key.len() ;
-      if line.len() < len + 1 || & line[0..len] != * graph_name_key {
-        bail!(
-          format!(
-            "illegal dump file, third line should be \
-            `{}<tool graph name>`", * graph_name_key
-          )
-        )
-      } else {
-        line[len..].trim().to_string()
-      }
-    } else {
-      bail!( format!("expected tool ({}) graph name, found nothing", name) )
-    } ;
-    let cmd = if let Some(line) = lines.next() {
-      line_count += 1 ;
-      let line = line ? ;
-      let len = cmd_key.len() ;
-      if line.len() < len + 1 || & line[0..len] != * cmd_key {
-        bail!(
-          format!(
-            "illegal dump file, fourth line should be \
-            `{}<tool cmd>`", * cmd_key
-          )
-        )
-      } else {
-        lazy_static!{
-          static ref cmd_regex: ::regex::Regex = ::regex::Regex::new(
-            r"([^\s]*)"
-          ).unwrap() ;
-        }
-
-        let mut cmd = vec![] ;
-        let mut iter = cmd_regex.find_iter( line[len..].trim() ) ;
-        if let Some(first) = iter.next() {
-          cmd.push( first.as_str().to_string() ) ;
-          for next in iter {
-            cmd.push( next.as_str().to_string() )
-          }
-          cmd
-        } else {
-          bail!(
-            format!(
-              "command for tool `{}` is illegal", name
-            )
-          )
-        }
-      }
-    } else {
-      bail!( format!("expected tool ({}) cmd, found nothing", name) )
-    } ;
-    
-    Ok( (
-      ToolConf { name, short, graph, cmd, validator: None }, line_count
-    ) )
   }
 }
 
@@ -870,7 +736,7 @@ impl Instance {
         conf.emph( & self[tool].name )
       )
     ) ? ;
-    self[tool].new_dump_info(conf, & mut tool_file).chain_err(
+    self[tool].dump_info(conf, & mut tool_file).chain_err(
       || format!(
         "while dumping info for tool `{}`",
         conf.emph( & self[tool].name )

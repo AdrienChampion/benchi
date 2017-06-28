@@ -55,25 +55,6 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res<()> {
     }
   }
 
-  // for file in & files {
-  //   let data = ToolData::cumul_of_file(conf, & file).chain_err(
-  //     || format!(
-  //       "while preparing for cumulative plot generation for `{}`", file
-  //     )
-  //   ) ? ;
-  //   bench_count = ::std::cmp::max( bench_count, data.res.len() ) ;
-  //   if ! data.res.is_empty() {
-  //     tool_data.push(data)
-  //   } else {
-  //     warn!(
-  //       conf =>
-  //         "ignoring data for `{}`: everything is timeout or error",
-  //         conf.sad(& data.tool.name)
-  //     ) ;
-  //     empty_data.push(data)
-  //   }
-  // }
-
   if tool_data.is_empty() {
     warn!(
       conf => "no data to plot, nothing to do"
