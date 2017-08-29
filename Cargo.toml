@@ -4,6 +4,7 @@ version = "0.2.0"
 authors = ["Adrien Champion <adrien.champion@email.com>"]
 
 [dependencies]
+rayon = "*"
 chrono = "*"
 clap = "*"
 ansi_term = "*"

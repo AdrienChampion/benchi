@@ -130,11 +130,14 @@ pub fn work(
       } ;
       let (data_file, data_file_path) = data_files.file_of(code) ? ;
       writeln!(
-        data_file, "{} {}", bench_res_1.map(
+        data_file, "{} {} {}", bench_res_1.map(
           |time, _| time, || tmo_time, || err_time
         ).as_sec_str(), bench_res_2.map(
           |time, _| time, || tmo_time, || err_time
-        ).as_sec_str()
+        ).as_sec_str(),
+        run_res.benchs.get(& bench).ok_or_else(
+          || format!("[bug] unknown benchmark {}", bench)
+        ) ?
       ).chain_err(
         || format!(
           "while writing to comparative data file `{}`",

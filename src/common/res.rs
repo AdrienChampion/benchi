@@ -1,5 +1,7 @@
 //! Types representing results.
 
+use rayon::slice::ParallelSliceMut ;
+
 use common::* ;
 
 
@@ -136,7 +138,7 @@ impl ToolRes {
       }
     ) ;
     times.shrink_to_fit() ;
-    times.sort() ;
+    times.par_sort_unstable() ;
     times
   }
 
