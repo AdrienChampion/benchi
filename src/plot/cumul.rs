@@ -183,7 +183,7 @@ set key above samplen 2 font ",11"
 
 set logscale y
 set autoscale
-set format x "10^{%L}"
+set format y "10^{%L}"
 "# ;
 
 /// Dumps the linestyles for the plot.

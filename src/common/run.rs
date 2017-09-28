@@ -143,7 +143,7 @@ sequentially\
       "Sets the output directory"
     ).value_name("dir").default_value("<today>_at_<now>").takes_value(
       true
-    ).number_of_values(1)
+    )/*.number_of_values(1)*/
   ).arg(
     Arg::with_name("timeout").short("-t").long("--timeout").help(
       "Sets the timeout for each run"
@@ -151,13 +151,13 @@ sequentially\
       tmo_validator
     ).default_value("1min").takes_value(
       true
-    ).number_of_values(1)
+    )/*.number_of_values(1)*/
   ).arg(
     Arg::with_name("para_benchs").long("--benchs").help(
       "Number of benchmarks to run in parallel"
     ).value_name("int").default_value("1").takes_value(
       true
-    ).number_of_values(1).validator(
+    )/*.number_of_values(1)*/.validator(
       int_validator
     )
   ).arg(
@@ -165,7 +165,7 @@ sequentially\
       "Number of tools to run in parallel on each benchmark"
     ).value_name("int").default_value("1").takes_value(
       true
-    ).number_of_values(1).validator(
+    )/*.number_of_values(1)*/.validator(
       int_validator
     )
   ).arg(
@@ -173,7 +173,7 @@ sequentially\
       "Only runs on `n` benchmarks (to try the set up)"
     ).value_name("int").takes_value(
       true
-    ).number_of_values(1).validator(
+    )/*.number_of_values(1)*/.validator(
       int_validator
     )
   ).arg(
@@ -183,7 +183,7 @@ sequentially\
       "
     ).default_value("on").takes_value(
       true
-    ).number_of_values(1).validator(
+    )/*.number_of_values(1)*/.validator(
       bool_validator
     ).value_name(bool_format)
   ).arg(

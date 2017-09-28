@@ -216,14 +216,14 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
       "\
 Specifies a command to run on the file generated (ignored if `--run_gp off`)\
       "
-    ).value_name("command").takes_value(true).number_of_values(1)
+    ).value_name("command").takes_value(true)//.number_of_values(1)
   ).arg(
     Arg::with_name("run_gp").long("--run_gp").help(
       "\
 Runs `gnuplot` (or not) to generate the final plot\
       "
-    ).default_value("on").takes_value(true).number_of_values(
-      1
+    ).default_value("on").takes_value(true // ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
@@ -232,8 +232,8 @@ Runs `gnuplot` (or not) to generate the final plot\
       "\
 Completely ignore benchmarks for which at least one tool returned an error\
       "
-    ).default_value("off").takes_value(true).number_of_values(
-      1
+    ).default_value("off").takes_value(true // ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
@@ -242,8 +242,8 @@ Completely ignore benchmarks for which at least one tool returned an error\
       "\
 Ignore validators, plot everything together\
       "
-    ).default_value("off").takes_value(true).number_of_values(
-      1
+    ).default_value("off").takes_value(true // ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
@@ -252,8 +252,8 @@ Ignore validators, plot everything together\
       "\
 Consider errors as timeouts\
       "
-    ).default_value("off").takes_value(true).number_of_values(
-      1
+    ).default_value("off").takes_value(true // ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
@@ -268,8 +268,8 @@ Alternatively the extension can be set on the <PLOT_FILE>:
   // Sets `--to` to svg:
   benchi plot my_plot.svg ...\
       "
-    ).default_value("pdf").takes_value(true).number_of_values(
-      1
+    ).default_value("pdf").takes_value(true // ).number_of_values(
+      // 1
     ).validator(
       PlotFmt::validator
     ).value_name( PlotFmt::values() )
