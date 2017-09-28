@@ -157,8 +157,8 @@ impl ToolRes {
       path.as_path()
     ).chain_err(
       || format!(
-        "while opening file `{}`, data file for `{}`",
-        conf.sad(& self.file), conf.emph( & self.tool.name )
+        "while opening file `{}`, plot data file for `{}`",
+        conf.emph( path.to_string_lossy() ), conf.emph( & self.tool.name )
       )
     ) ? ;
 

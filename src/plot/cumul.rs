@@ -99,6 +99,16 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
   ).and_then(
     |()| file.write_all( plot_prefix.as_bytes() )
   ).and_then(
+    |()| file.write_all(
+      format!(r#"
+set xlabel "Benchmarks passed (of {})" textcolor rgbcolor "0x000000"
+set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
+
+\
+        "#, bench_count
+      ).as_bytes()
+    )
+  ).and_then(
     |()| dump_linestyles(& mut file, bench_count)
   ).and_then(
     |()| if bench_count <= 10 {
@@ -125,7 +135,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
     let data_file = conf.data_file_path_of(& tool_res.tool) ? ;
     file.write_all(
       format!(
-        "  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
+        "  \"{}\" using 1:2 w lp ls {} t '{} ({})'",
         data_file.to_string_lossy(), index,
         tool_res.tool.graph, tool_res.suc_count
       ).as_bytes()
@@ -139,7 +149,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
       let data_file = conf.data_file_path_of(& tool_res.tool) ? ;
       file.write_all(
         format!(
-          ", \\\n  \"{}\" using 2:1 w lp ls {} t '{} ({})'",
+          ", \\\n  \"{}\" using 1:2 w lp ls {} t '{} ({})'",
           data_file.to_string_lossy(), index,
           tool_res.tool.graph, tool_res.suc_count
         ).as_bytes()
@@ -169,12 +179,9 @@ set xtics nomirror
 set ytics nomirror
 set grid
 
-set xlabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
-set ylabel "Benchmarks passed" textcolor rgbcolor "0x000000"
-
 set key above samplen 2 font ",11"
 
-set logscale x
+set logscale y
 set autoscale
 set format x "10^{%L}"
 "# ;

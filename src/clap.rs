@@ -314,8 +314,8 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
   ).arg(
     Arg::with_name("force").short("-f").long("--force").help(
       "When writing a file, overwrite if present"
-    ).default_value("off").takes_value(true).number_of_values(
-      1
+    ).default_value("off").takes_value(true// ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
@@ -330,8 +330,8 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
   ).arg(
     Arg::with_name("colored").short("-c").long("--color").help(
       "Colored output"
-    ).default_value("on").takes_value(true).number_of_values(
-      1
+    ).default_value("on").takes_value(true// ).number_of_values(
+      // 1
     ).validator(
       bool_validator
     ).value_name(bool_format)
