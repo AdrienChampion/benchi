@@ -104,8 +104,8 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
 set xlabel "Benchmarks passed (of {})" textcolor rgbcolor "0x000000"
 set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
 
-\
-        "#, bench_count
+
+"#, run_res.benchs.len()
       ).as_bytes()
     )
   ).and_then(
