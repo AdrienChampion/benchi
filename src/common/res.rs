@@ -214,6 +214,8 @@ impl RunRes {
     while let Some(mut current) = self.tools.pop() {
       for (bench, res) in & current.res {
         if res.is_err() {
+          let prev = self.benchs.remove(& bench) ;
+          assert!( prev.is_some() ) ;
           to_rm.push(* bench)
         }
       }
@@ -224,6 +226,15 @@ impl RunRes {
           let _ = tool.res.remove(& bench) ;
         }
       }
+      tool_buf.push(current)
+    }
+    for tool in tool_buf {
+      self.tools.push(
+        ToolRes::mk(
+          tool.tool, tool.timeout, tool.file,
+          tool.res, tool.vald_conf
+        )
+      )
     }
     removed
   }
