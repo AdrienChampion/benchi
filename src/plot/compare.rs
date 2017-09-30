@@ -12,6 +12,24 @@ pub fn work(
   let mut run_res = ::common::res::RunRes::of_files(
     vec![ file_1.clone(), file_2.clone() ]
   ) ? ;
+  
+  if conf.no_errors {
+    let dropped = run_res.rm_errs() ;
+    log!{
+      conf =>
+        "  dropped {} benchmark{} for which one tool \
+        or more failed (--no_errs on).",
+        dropped, if dropped == 1 {""} else {"s"}
+    }
+  } else if conf.errs_as_tmos {
+    let changed = run_res.errs_as_tmos() ;
+    log!{
+      conf =>
+        "  changed {} error result{} to timeout{} (--errs_as_tmos on).",
+        changed,
+        if changed == 1 {""} else {"s"}, if changed == 1 {""} else {"s"}
+    }
+  }
 
   let mut data_files = ::common::res::DataFileHandler::mk(conf, & run_res) ? ;
 

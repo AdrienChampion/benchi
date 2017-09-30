@@ -249,7 +249,9 @@ impl RunRes {
       for (_, res) in tool.res.iter_mut() {
         if res.is_err() {
           changed += 1 ;
-          * res = BenchRes::Timeout
+          * res = BenchRes::Timeout ;
+          tool.err_count -= 1 ;
+          tool.tmo_count += 1 ;
         }
       }
     }
@@ -330,9 +332,9 @@ impl<'a> DataFileHandler<'a> {
                 Err(
                   format!(
                     "If you still want to plot the data, consider using \
-                    option `{}`: `benchi plot ... compare {} ...",
-                    conf.happy("--merged"),
-                    conf.emph("--merged on")
+                    option `{}`: `benchi plot {} ...",
+                    conf.happy("--merge"),
+                    conf.emph("--merge on")
                   ).into()
                 ) as Res<Self>
               ).chain_err(
@@ -343,7 +345,8 @@ impl<'a> DataFileHandler<'a> {
               ).chain_err(
                 || format!(
                   "data for tools {} and {} do not agree on their validators,",
-                  conf.bad(& tool_res.tool.name), conf.bad(& tool_res.tool.name)
+                  conf.bad(& tool_res.tool.name),
+                  conf.bad(& other_tool_res.tool.name)
                 )
               )
             }
