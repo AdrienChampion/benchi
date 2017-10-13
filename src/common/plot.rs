@@ -13,6 +13,8 @@ pub struct PlotConf {
   pub then: Option<String>,
   /// Gnuplot format (terminal).
   pub fmt: PlotFmt,
+  /// Generate title?
+  pub title: bool,
   /// Ignore errors?
   pub no_errors: bool,
   /// Consider errors as timeout?
@@ -30,7 +32,8 @@ impl PlotConf {
   #[inline]
   pub fn mk(
     file: String, gnuplot: bool, then: Option<String>,
-    fmt: PlotFmt, no_errors: bool, errs_as_tmos: bool, merge: bool,
+    fmt: PlotFmt, title: bool,
+    no_errors: bool, errs_as_tmos: bool, merge: bool,
     gconf: GConf
   ) -> Res<Self> {
     use std::process::{ Command, Stdio } ;
@@ -74,7 +77,7 @@ impl PlotConf {
     } ;
     Ok(
       PlotConf {
-        file, gnuplot, then, fmt, no_errors, errs_as_tmos, merge, gconf
+        file, gnuplot, then, fmt, title, no_errors, errs_as_tmos, merge, gconf
       }
     )
   }
@@ -137,8 +140,31 @@ impl PlotFmt {
   pub fn term(& self) -> & 'static str {
     match * self {
       PlotFmt::Pdf => "\
-        set term pdf enhanced \
+        set term pdf enhanced dashed \
         font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Svg => "\
+        set term svg enhanced \
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Png => "\
+        set term pngcairo enhanced \
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
+      ",
+      PlotFmt::Tex => "set term latex",
+    }
+  }
+  /// Gnuplot terminal of a format, `compare` version.
+  pub fn compare_term(& self) -> & 'static str {
+    match * self {
+      PlotFmt::Pdf => "\
+        set term pdf enhanced dashed \
+        font \"Helvetica,15\" background rgb \"0xFFFFFF\" \
+        size 3.1,3 ;\n\n\
+        set lmargin at screen 0.14 ;\n\
+        set rmargin at screen 0.95 ;\n\
+        set bmargin at screen 0.12 ;\n\
+        set tmargin at screen 0.95 ;\
       ",
       PlotFmt::Svg => "\
         set term svg enhanced \
@@ -228,6 +254,14 @@ Runs `gnuplot` (or not) to generate the final plot\
       bool_validator
     ).value_name(bool_format)
   ).arg(
+    Arg::with_name("title").long("--title").help(
+      "(de)activates the title of the plot"
+    ).default_value("on").takes_value(true // ).number_of_values(
+      // 1
+    ).validator(
+      bool_validator
+    ).value_name(bool_format)
+  ).arg(
     Arg::with_name("no_errors").long("--no_errs").help(
       "\
 Completely ignore benchmarks for which at least one tool returned an error\
@@ -308,6 +342,14 @@ pub fn plot_clap<'a>(
       "unreachable(plot:run_gp): input validated in clap"
     ) ;
 
+    let title = bool_of_str(
+      plot_matches.value_of("title").expect(
+        "unreachable(plot:title): default provided"
+      )
+    ).expect(
+      "unreachable(plot:title): input validated in clap"
+    ) ;
+
     let no_errors = bool_of_str(
       plot_matches.value_of("no_errors").expect(
         "unreachable(plot:no_errors): default provided"
@@ -345,7 +387,7 @@ pub fn plot_clap<'a>(
     } else { None } ;
 
     let plot_conf = match PlotConf::mk(
-      file, run_gp, cmd, fmt, no_errors, errs_as_tmos, merge, conf
+      file, run_gp, cmd, fmt, title, no_errors, errs_as_tmos, merge, conf
     ) {
       Ok(conf) => conf,
       Err(e) => return Some( Err(e) ),

@@ -228,7 +228,7 @@ impl RunRes {
       }
       tool_buf.push(current)
     }
-    for tool in tool_buf {
+    while let Some(tool) = tool_buf.pop() {
       self.tools.push(
         ToolRes::mk(
           tool.tool, tool.timeout, tool.file,
