@@ -179,7 +179,7 @@ set xtics nomirror
 set ytics nomirror
 set grid
 
-set key above samplen 2 font ",11"
+set key above samplen 2 font ",15"
 
 set logscale y
 set autoscale

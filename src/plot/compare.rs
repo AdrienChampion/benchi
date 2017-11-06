@@ -102,6 +102,8 @@ pub fn work(
     res_1.tool.name.clone(), res_2.tool.name.clone()
   ) ;
 
+  let mut code_to_count = HashMap::new() ;
+
   for (bench, bench_res_1) in res_1.res.drain() {
     if let Some(bench_res_2) = res_2.res.remove(& bench) {
       if bench_res_1.is_tmo() && bench_res_2.is_tmo() {
@@ -161,7 +163,8 @@ pub fn work(
           "while writing to comparative data file `{}`",
           conf.sad( data_file_path.to_string_lossy() )
         )
-      ) ?
+      ) ? ;
+      * code_to_count.entry(code).or_insert(0) += 1
     } else {
       not_in_res_2.push(bench)
     }
@@ -330,10 +333,13 @@ plot \\
   ) ? ;
 
   data_files.fold_data_paths(
-    & mut file, |file, index, desc, path| write!(
+    & mut file, |file, code, index, desc, path| write!(
       file, ", \\\n  '{}' using 1:2 {} with points ls {}",
       path, desc.map(
-        |desc| format!("title '{}'", desc)
+        |desc| format!(
+          "title '{} ({})'",
+          desc, code_to_count.get(& code).map(|cnt| * cnt).unwrap_or(0)
+        )
       ).unwrap_or( "notitle".into() ),
       index + 4
     ).chain_err(
@@ -389,5 +395,5 @@ set format x "10^{%L}"
 set logscale y
 set format y "10^{%L}"
 
-set key above samplen 2 font ",11"
+set key above samplen 2 font ",13"
 "# ;

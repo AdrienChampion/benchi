@@ -448,15 +448,16 @@ impl<'a> DataFileHandler<'a> {
   ///
   /// Parameters of the fold function:
   /// - accumulator,
+  /// - validator code,
   /// - validator counter,
   /// - name of the validator,
   /// - path to the file.
   pub fn fold_data_paths<
-    Acc, Fold: Fn(Acc, usize, Option<& str>, & str) -> Res<Acc>
+    Acc, Fold: Fn(Acc, Option<i32>, usize, Option<& str>, & str) -> Res<Acc>
   >(& self, mut init: Acc, fold: Fold) -> Res<Acc> {
     match * self {
       DataFileHandler::Merged { ref path, .. } => fold(
-        init, 1, None, & path.to_string_lossy().to_string()
+        init, None, 1, None, & path.to_string_lossy().to_string()
       ),
       DataFileHandler::Split {
         ref vald_conf, ref map, ref unknown, ..
@@ -464,7 +465,7 @@ impl<'a> DataFileHandler<'a> {
         let mut count = 0 ;
         if let Some((_, ref path)) = * unknown {
           init = fold(
-            init, 0, Some("??"), & path.to_string_lossy().to_string()
+            init, None, 0, Some("??"), & path.to_string_lossy().to_string()
           ) ?
         }
         // Incrementing here on purpose, this ensures that only unknown data
@@ -475,7 +476,7 @@ impl<'a> DataFileHandler<'a> {
             || format!("unknown validation code {}", code)
           ) ? ;
           init = fold(
-            init, count, Some(& vald.desc),
+            init, Some(* code), count, Some(& vald.desc),
             & path.to_string_lossy().to_string()
           ) ? ;
           count += 1
