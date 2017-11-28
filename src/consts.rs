@@ -132,15 +132,58 @@ pub static ex_conf_file: & str = r#"# Example configuration file.
 
 # Setting `run` options. Each of these options can be overriden with command-
 # line arguments.
-options: "-v run -o example/<today>_at_<now> --tools 2 --benchs 3 -t 5s"
+options: "-v run -o example/<today>_at_<now> --tools 2 --benchs 2 -t 5s"
 
 # So `benchi -q run -t 3min <this file>` overrides the verbosity setting and
 # the timeout from the options above.
+
+
+# This section defines validator codes that each tool definition can use. In
+# practice, these are exit codes for validation scripts (see below).
+validators {
+  # `success` is the only kind of validator right now.
+  # It is followed by the exit code itself (`0`), an identifier to use in the
+  # validation scripts (`found_some`), and a nice name to use in the plots
+  # (`Found Some`).
+  success: 0, found_some, Found Some
+  success: 10, found_none, Found None
+  # Everything else is considered an error.
+}
+# NB: this example makes little sense, running it will most likely trigger
+# warnings because some `tools` will disagree on the validation codes.
+#
+# This is expected: the point of validation codes is to make sure the tools
+# agree on the result. But in this example, we're running `find` in different
+# directories which, again, makes little sense.
+
 
 find at root {
   short: root_find
   graph: Find at Root
   cmd: "find / -iname"
+
+  # In addition to the validation codes defined above, validators can refer to
+  # four things:
+  #
+  # - `$bench` the argument fed to this tool (benchmark being validated)
+  # - `$code` the code the tool returned
+  # - `$out` a file containing the tool's `stdout`
+  # - `$err` a file containing the tool's `stderr`
+  #
+  # A tool's validator becomes a bash script located at
+  # `<out/dir>/<tool_short_name>/validator.sh`
+  validator: ```
+code="$found_none"
+while read a_file ; do
+  if [ -f $a_file ] \
+  || [ -d $a_file ] ; then
+    code="$found_some"
+  else
+    exit 2
+  fi
+done < $out
+exit $code
+  ```
 }
 
 Find in Current Directory {
@@ -148,18 +191,56 @@ Find in Current Directory {
   # Graph name is optional, none provided here so benchi will use the 'name'
   # of the tool instead: `Find in Current Directory` here.
   cmd: "find . -iname"
+
+  # Validators cannot be factored out for multiple tools to use yet, create an
+  # issue if you're interested in this feature!
+  validator: ```
+code="$found_none"
+while read a_file ; do
+  if [ -f $a_file ] \
+  || [ -d $a_file ] ; then
+    code="$found_some"
+  else
+    exit 2
+  fi
+done < $out
+exit $code
+  ```
 }
 
 Find in Tmp {
   short: tmp_find
   cmd: "find /tmp -iname"
+  validator: ```
+code="$found_none"
+while read a_file ; do
+  if [ -f $a_file ] \
+  || [ -d $a_file ] ; then
+    code="$found_some"
+  else
+    exit 2
+  fi
+done < $out
+exit $code
+  ```
 }
 
 Find in Home {
   short: home_find
   cmd: "find /home -iname"
+  validator: ```
+code="$found_none"
+while read a_file ; do
+  if [ -f $a_file ] \
+  || [ -d $a_file ] ; then
+    code="$found_some"
+  else
+    exit 2
+  fi
+done < $out
+exit $code
+  ```
 }
-
 "# ;
 
 

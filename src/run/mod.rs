@@ -596,7 +596,7 @@ impl Master {
   ) -> Res<()> {
     {
       let instance = self.instance.clone() ; // `Arc` clone, not real clone.
-      let mut codes = self.codes.entry(bench).or_insert_with(
+      let codes = self.codes.entry(bench).or_insert_with(
         || instance.tools().map(
           |_| None
         ).collect()
