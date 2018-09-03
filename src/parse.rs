@@ -2,7 +2,6 @@
 
 use std::str::from_utf8 ;
 
-use regex::Regex ;
 use nom::{ IResult, multispace } ;
 
 use errors::* ;
@@ -87,7 +86,7 @@ impl ToolConfBuilder {
   }
   /// Sets the command name.
   pub fn set_cmd(& mut self, cmd: Vec<String>) -> Res<()> {
-    if let Some(_) = self.cmd {
+    if self.cmd.is_some() {
       bail!(
         format!(
           "trying to set the command for {} twice", self.name
@@ -100,7 +99,7 @@ impl ToolConfBuilder {
   }
   /// Sets the validator name.
   pub fn set_validator(& mut self, validator: String) -> Res<()> {
-    if let Some(_) = self.validator {
+    if self.validator.is_some() {
       bail!(
         format!(
           "trying to set the validator for {} twice", self.name
@@ -113,18 +112,23 @@ impl ToolConfBuilder {
   }
 
   /// Extracts a tool configuration.
-  pub fn to_conf(self) -> Res<ToolConf> {
+  pub fn into_conf(self) -> Res<ToolConf> {
     let name = self.name ;
     let short = self.short.ok_or_else::<Error, _>(
       || format!("no short name given for `{}`", name).into()
     ) ? ;
-    let graph = if let Some(graph) = self.graph { graph } else {
-      name.clone()
-    } ;
-    let cmd = self.cmd.ok_or_else::<Error, _>(
+    let graph = self.graph ;
+    let cmd_lst = self.cmd.ok_or_else::<Error, _>(
       || format!("no command given for `{}`", name).into()
     ) ? ;
     let validator = self.validator ;
+    let mut cmd = String::new() ;
+    let mut post = "" ;
+    for line in cmd_lst {
+      cmd += post ;
+      cmd += & line ;
+      post = "\n"
+    }
     Ok(
       ToolConf { name, short, graph, cmd, validator }
     )
@@ -300,7 +304,7 @@ named!{
       tag!("options") >>
       spc_cmt >>
       char!(':') >>
-      spc_cmt >> (())
+      spc_cmt >> ()
     ),
     quoted_string
   )
@@ -315,7 +319,7 @@ named!{
     spc_cmt >>
     num: re_bytes_find!( r"^[0-9][0-9]*" ) >> (
       from_utf8(num).chain_err(
-        || format!("non utf8 string during signed int parsing")
+        || "non utf8 string during signed int parsing"
       ).and_then(
         |num| {
           use ::std::str::FromStr ;
@@ -373,7 +377,7 @@ fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
             )
           )
         ) >>
-        char!('}') >> (())
+        char!('}') >> ()
       )
     ),
     |_| vald_conf
@@ -464,7 +468,7 @@ fn tool_conf<'a>(bytes: & 'a [u8]) -> IResult< & 'a [u8], Res<ToolConf> > {
       )
     ) >>
     char!('}') >> (
-      builder.unwrap().to_conf()
+      builder.unwrap().into_conf()
     )
   )
 }
@@ -485,20 +489,13 @@ fn tool_confs<'a>(
     vec: many1!(
       terminated!(tool_conf, spc_cmt)
     ) >> (
-      ( opts.unwrap_or(vec![]), vald_conf, vec )
+      ( opts.unwrap_or_else( Vec::new ), vald_conf, vec )
     )
   )
 }
 
-
-lazy_static!{
-  static ref cmd_regex: Regex = Regex::new(
-    r"([^\s]*)"
-  ).unwrap() ;
-}
-
 /// Parses tool configurations from some bytes.
-pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
+pub fn work<'a>(_conf: & GConf, bytes: & 'a [u8]) -> Res<
   ( Vec<String>, ValdConf, Vec< ToolConf > )
 > {
   match tool_confs(bytes) {
@@ -506,28 +503,8 @@ pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
       let vald_conf = vald_conf ? ;
       if rest.is_empty() {
         let mut tool_confs = Vec::with_capacity(tools.len()) ;
-        for tool in tools.into_iter() {
+        for tool in tools {
           let mut tool_conf = tool ? ;
-          let cmd = {
-            let mut cmd = vec![] ;
-            assert_eq!(tool_conf.cmd.len(), 1) ;
-            let str_cmd = & tool_conf.cmd[0] ;
-            let mut iter = cmd_regex.find_iter(str_cmd) ;
-            if let Some(first) = iter.next() {
-              cmd.push( first.as_str().to_string() ) ;
-              for next in iter {
-                cmd.push( next.as_str().to_string() )
-              }
-            } else {
-              bail!(
-                format!(
-                  "command for tool {} is illegal", conf.emph(& tool_conf.name)
-                )
-              )
-            }
-            cmd
-          } ;
-          tool_conf.cmd = cmd ;
           tool_confs.push(tool_conf)
         }
         Ok( (opts, vald_conf, tool_confs) )
@@ -538,9 +515,7 @@ pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
     IResult::Error(e) => bail!(
       format!("conf file parse error: `{:?}`", e)
     ),
-    IResult::Incomplete(_) => bail!(
-      format!("conf file parse error: incomplete")
-    ),
+    IResult::Incomplete(_) => bail!("conf file parse error: incomplete"),
   }
 }
 
@@ -589,7 +564,7 @@ named!{
   #[doc = "Parses an exit code."],
   code_opt< Res< Option<i32> > >, alt_complete!(
     map!( char!('?'), |_| Ok(None) ) |
-    map!( signed_int, |int: Res<i32>| int.map(|int| Some(int)) )
+    map!( signed_int, |int: Res<i32>| int.map(Some) )
   )
 }
 
@@ -734,9 +709,7 @@ pub fn dump(
     IResult::Error(e) => bail!(
       format!("dump parse error: `{:?}`", e)
     ),
-    IResult::Incomplete(_) => bail!(
-      format!("dump parse error: incomplete")
-    ),
+    IResult::Incomplete(_) => bail!("dump parse error: incomplete"),
   }
 }
 

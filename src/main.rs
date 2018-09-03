@@ -16,12 +16,17 @@ extern crate error_chain ;
 #[macro_use]
 extern crate lazy_static ;
 extern crate rayon ;
+extern crate serde ;
+#[macro_use]
+extern crate serde_derive ;
+extern crate toml ;
 
 pub mod consts ;
 #[macro_use]
 pub mod common ;
 pub mod clap ;
 pub mod parse ;
+pub mod load ;
 pub mod run ;
 pub mod plot ;
 pub mod inspect ;
@@ -60,7 +65,11 @@ pub mod errors {
         )
       }
       #[doc = "Tool run error."]
-      ToolRun(conf: GConf, tool: ToolConf, bench: String) {
+      ToolRun(
+        conf: Box<GConf>,
+        tool: Box<ToolConf>,
+        bench: String
+      ) {
         description("error during tool run")
         display(
           "failure while running '{}' on '{}'",
@@ -97,7 +106,7 @@ pub mod errors {
   }
 
   /// Prints an error.
-  pub fn print_one_err<C: ColorExt>(conf: & C, err: Error) {
+  pub fn print_one_err<C: ColorExt>(conf: & C, err: & Error) {
     let stderr = & mut ::std::io::stderr() ;
 
     if let Err(io_e) = write_err_exit(conf, & err, stderr) {
@@ -105,7 +114,7 @@ pub mod errors {
         "An error occured, but writing to stderr {}:", conf.bad("failed")
       ) ;
       println!("> {}", io_e) ;
-      println!("") ;
+      println!() ;
 
       let stdout = & mut ::std::io::stdout() ;
       if let Err(io_e) = write_err_exit(conf, & err, stdout) {
@@ -113,7 +122,7 @@ pub mod errors {
           "Writing to stdout {}:", conf.bad("also failed")
         ) ;
         println!("> {}", io_e) ;
-        println!("") ;
+        println!() ;
 
         println!("{} Original error:", conf.bad("|===|")) ;
         println!("{} {}", conf.bad("|"), err) ;
@@ -124,8 +133,8 @@ pub mod errors {
 
 
   /// Prints an error and exits if `exit` is true.
-  pub fn print_err<C: ColorExt>(conf: & C, err: Error, exit: bool) {
-    print_one_err(conf, err) ;
+  pub fn print_err<C: ColorExt>(conf: & C, err: & Error, exit: bool) {
+    print_one_err(conf, & err) ;
     if exit {
       ::std::process::exit(2)
     }
@@ -179,7 +188,7 @@ fn main() {
       let instance = match load_instance(& mut conf, tools) {
         Ok(instance) => instance,
         Err(e) => {
-          print_err(& conf, e, true) ;
+          print_err(& conf, & e, true) ;
           unreachable!()
         },
       } ;
@@ -192,24 +201,24 @@ fn main() {
         Arc::new(conf), Arc::new(instance)
       ) ;
 
-      if let Err(e) = work( conf.clone(), instance.clone() ) {
-        print_err(& * conf, e, true)
+      if let Err(e) = work( & conf, & instance ) {
+        print_err(& * conf, & e, true)
       }
     },
 
     Ok( Clap::Plot(conf, kind) ) => {
       if let Err(e) = plot::work(& conf, kind) {
-        print_err(& conf, e, true)
+        print_err(& conf, & e, true)
       }
     },
 
     Ok( Clap::Conf(conf, file) ) => {
-      if let Err(e) = common::example_conf_file(& conf, file) {
-        print_err(& conf, e, true)
+      if let Err(e) = common::example_conf_file(& conf, & file) {
+        print_err(& conf, & e, true)
       }
     },
 
-    Err(e) => print_err(& GConf::default(), e, true)
+    Err(e) => print_err(& GConf::default(), & e, true)
   }
 
   ::std::process::exit(0)
@@ -243,7 +252,7 @@ fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
             "tools `{}` and `{}` have the same graph name `{}`",
             conf.emph(& tool_a.name),
             conf.emph(& tool_b.name),
-            conf.bad(& tool_a.graph),
+            conf.bad(& tool_a.graph_name()),
           )
         }
       }
@@ -253,9 +262,7 @@ fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
   let mut benchs = {
 
     let buff_read = try!(
-      File::open(& conf.bench_file).map(
-        |file| BufReader::new(file)
-      ).chain_err(
+      File::open(& conf.bench_file).map(BufReader::new).chain_err(
         while_opening!(conf, bench_file)
       )
     ) ;
@@ -290,26 +297,27 @@ fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
 
 
 
-fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
+fn work(conf: & Arc<RunConf>, instance: & Arc<Instance>) -> Res<()> {
   if instance.tool_len() == 0 || instance.bench_len() == 0 {
     return Ok(())
   }
 
   // Check that the timeout command exists.
-  match Command::new("timeout").arg("1").arg("echo").arg("test").stdout(
+  if Command::new(
+    "timeout"
+  ).arg("1").arg("echo").arg("test").stdout(
     ::std::process::Stdio::null()
   ).stderr(
     ::std::process::Stdio::null()
   ).stdin(
     ::std::process::Stdio::null()
-  ).status() {
-    Err(_) => bail!(
+  ).status().is_err() {
+    bail!(
       format!(
         "could not find `{}` command, make sure it is installed",
         conf.emph("timeout")
       )
-    ),
-    _ => (),
+    )
   }
 
   // Create output directory if it doesn't already exist.
@@ -337,7 +345,7 @@ fn work(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<()> {
   log!(
     conf =>
       let time = format!(
-        "{}.{}", time.as_secs(), time.subsec_nanos() / 1_000_000u32
+        "{}.{}", time.as_secs(), time.subsec_millis()
       ) ;
       " " ;
       let pref = if master.errors > 0 || master.timeouts > 0 {

@@ -53,7 +53,7 @@ impl ToolRun {
     'work: loop {
 
       // Notify bench run we're waiting.
-      if let Err(_) = self.bench_run.send(self.index) {
+      if self.bench_run.send(self.index).is_err() {
         // Disconnected, can happen if we're done. (Maybe? Nothing we can
         // do anyways.)
         break 'work
@@ -77,9 +77,9 @@ impl ToolRun {
             }
           }
           // Send to master.
-          if let Err(_) = self.master.send(
+          if self.master.send(
             RunRes { tool, bench, res }
-          ) {
+          ).is_err() {
             // Disconnected, should not happen.
             break 'work
           }
@@ -98,16 +98,11 @@ impl ToolRun {
     let bench = & self.instance[bench_idx] ;
     let kid_cmd = & self.instance[tool_idx].cmd ;
 
-    assert!( kid_cmd.len() > 0 ) ;
+    assert!( ! kid_cmd.is_empty() ) ;
 
     let mut cmd = Command::new("timeout") ;
-    cmd.arg(& format!("{}", self.conf.timeout.as_secs())).arg(& kid_cmd[0]) ;
-    let mut cmd_str = kid_cmd[0].to_string() ;
-    for arg in & kid_cmd[1..] {
-      cmd.arg(arg) ;
-      cmd_str.push(' ') ;
-      cmd_str.push_str(arg)
-    }
+    cmd.arg(& format!("{}", self.conf.timeout.as_secs())).arg(& kid_cmd) ;
+    let mut cmd_str = kid_cmd.to_string() ;
     cmd.arg(bench) ;
     cmd_str.push(' ') ;
     cmd_str.push_str(bench) ;
@@ -138,7 +133,7 @@ impl ToolRun {
       Ok( BenchRes::Timeout(status) )
     } else {
       let status = if let Some(vald_status) = self.instance.validate(
-        & self.conf, tool_idx, bench_idx, & status
+        & self.conf, tool_idx, bench_idx, status
       ) ? {
         vald_status
       } else {
@@ -215,7 +210,7 @@ impl BenchRun {
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender< Res<usize> >,
     from_master: Receiver< BenchIndex >,
-    tool_to_master: Sender<RunRes>,
+    tool_to_master: & Sender<RunRes>,
   ) -> Self {
     let mut tool_runs = Vec::with_capacity( conf.tool_par ) ;
     // Channel to `self`, shared by all tool runs.
@@ -248,7 +243,7 @@ impl BenchRun {
     'work: loop {
 
       // Notify master we're waiting.
-      if let Err(_) = self.master.send( Ok(self.index) ) {
+      if self.master.send( Ok(self.index) ).is_err() {
         // Disconnected, can happen if we're done. (Maybe? Nothing we can
         // do anyways.)
         break 'work
@@ -260,7 +255,7 @@ impl BenchRun {
           // Work...
           if let Err(e) = self.run(bench) {
             // Send to master.
-            if let Err(_) = self.master.send( Err(e) ) {
+            if self.master.send( Err(e) ).is_err() {
               // Disconnected, should not happen.
               break 'work
             }
@@ -324,7 +319,7 @@ pub struct Master {
   /// Files in write mode to write the results to.
   tool_files: ToolVec<File>,
   /// Progress bar.
-  bar: Option< ProgressBar< ::std::io::Stdout > >,
+  pbar: Option< ProgressBar< ::std::io::Stdout > >,
   /// Number of errors.
   pub errors: usize,
   /// Number of timeouts.
@@ -357,23 +352,23 @@ impl Master {
       // Initialize bench run.
       let bench_run = BenchRun::mk(
         conf.clone(), instance.clone(), index,
-        b2m_s.clone(), m2b_r, t2m_s.clone(),
+        b2m_s.clone(), m2b_r, & t2m_s,
       ) ;
       // Launch.
       spawn( move || bench_run.launch() ) ;
       ()
     }
 
-    let bar = if conf.quiet() { None } else {
-      let mut bar = ProgressBar::new(
+    let pbar = if conf.quiet() { None } else {
+      let mut pbar = ProgressBar::new(
         (instance.tool_len() as u64) * (instance.bench_len() as u64)
       ) ;
-      bar.format("|##-|") ;
-      bar.tick_format("\\|/-") ;
-      bar.show_time_left = false ;
-      bar.show_speed = false ;
-      bar.show_tick = true ;
-      Some(bar)
+      pbar.format("|##-|") ;
+      pbar.tick_format("\\|/-") ;
+      pbar.show_time_left = false ;
+      pbar.show_speed = false ;
+      pbar.show_tick = true ;
+      Some(pbar)
     } ;
 
     let (tool_files, avg_runtime) = instance.init_tools(
@@ -395,7 +390,7 @@ impl Master {
         from_tool_runs,
         from_bench_runs,
         tool_files,
-        bar,
+        pbar,
         errors: 0,
         timeouts: 0,
         avg_runtime,
@@ -433,15 +428,15 @@ impl Master {
               // Disconnected, keep going.
               print_err(
                 & * self.conf,
-                format!("lost contact with bench run {}", index).into(),
+                & format!("lost contact with bench run {}", index).into(),
                 false
               ) ;
-              println!("") ;
+              println!() ;
               continue 'bench_run_msgs
             },
             Ok( Err(e) ) => {
-              print_err(& * self.conf, e, false) ;
-              println!("") ;
+              print_err(& * self.conf, & e, false) ;
+              println!() ;
               continue 'bench_run_msgs
             },
             // No one's available, moving on to consume tool runs' messages.
@@ -509,7 +504,7 @@ impl Master {
       match self.from_tool_runs.try_recv() {
 
         Ok( RunRes { tool, bench, res } ) => {
-          self.bar.as_mut().map( |b| b.inc() ) ;
+          self.pbar.as_mut().map( |b| b.inc() ) ;
 
           // If that was the last bench, try to delete err directory if empty.
           if self.instance.is_last_bench(bench) {
@@ -529,9 +524,9 @@ impl Master {
                   self.conf.emph( self.instance.str_of_bench(bench) )
                 )
               ) {
-                println!("") ;
-                print_err(& * self.conf, e, false) ;
-                println!("")
+                println!() ;
+                print_err(& * self.conf, & e, false) ;
+                println!()
               }
               format!( "{} {}", time.as_sec_str(), status.as_data_str() )
             },
@@ -554,7 +549,7 @@ impl Master {
                   self.conf.sad( self.instance.str_of_bench(bench) )
                 )
               ) {
-                print_err(& * self.conf, e, false)
+                print_err(& * self.conf, & e, false)
               }
               continue 'recv
             },
@@ -576,12 +571,16 @@ impl Master {
         },
 
         Err( TryRecvError::Empty ) => {
-          self.bar.as_mut().map( |b| b.tick() ) ;
+          if let Some(pbar) = self.pbar.as_mut() {
+            pbar.tick()
+          }
           break 'recv
         },
 
         Err( TryRecvError::Disconnected ) => {
-          self.bar.as_mut().map( |b| b.tick() ) ;
+          if let Some(pbar) = self.pbar.as_mut() {
+            pbar.tick()
+          }
           return Ok(true)
         },
       }
@@ -637,7 +636,7 @@ impl Master {
             self.conf.emph( & self.instance[tool].name ),
             self.conf.sad( code_str ) ;
             {
-              for (tool, code) in disagree.into_iter() {
+              for (tool, code) in disagree {
                 let code_str = if let Some(
                   vald_conf
                 ) = self.conf.vald_conf().get(code) {

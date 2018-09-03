@@ -9,7 +9,7 @@ use errors::* ;
 
 
 /// Runs `gnuplot` and the user's command depending on the configuration.
-pub fn run_stuff(conf: & PlotConf, final_file: String) -> Res<()> {
+pub fn run_stuff(conf: & PlotConf, final_file: & str) -> Res<()> {
   if conf.gnuplot {
     log!{
       conf, verb =>
@@ -74,14 +74,14 @@ pub fn work(conf: & PlotConf, kind: PlotKind) -> Res<()> {
           log!{ conf, verb => "  loading data files..." }
         }
       }
-      compare::work(conf, file_1, file_2).chain_err(
+      compare::work(conf, & file_1, & file_2).chain_err(
         || "during comparative plot generation"
       )
     },
   } ? ;
 
   if let Some(final_file) = final_file {
-    run_stuff(conf, final_file) ?
+    run_stuff(conf, & final_file) ?
   }
 
   log!{ conf => "Done" }

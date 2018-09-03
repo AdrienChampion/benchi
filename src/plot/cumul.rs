@@ -11,7 +11,7 @@ use errors::* ;
 pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
   
   log!{ conf => "  loading tool data..." }
-  let mut run_res = ::common::res::RunRes::of_files( files.clone() ) ? ;
+  let mut run_res = ::common::res::RunRes::of_files(files) ? ;
   
   if conf.no_errors {
     let dropped = run_res.rm_errs() ;
@@ -112,7 +112,7 @@ set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
     |()| dump_linestyles(& mut file, bench_count)
   ).and_then(
     |()| if bench_count <= 10 {
-      file.write_all( "set xtics 1\n".as_bytes() )
+      file.write_all(b"set xtics 1\n")
     } else {
       Ok(())
     }
@@ -137,7 +137,7 @@ set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
       format!(
         "  \"{}\" using 1:2 w lp ls {} t '{} ({})'",
         data_file.to_string_lossy(), index,
-        tool_res.tool.graph, tool_res.suc_count
+        tool_res.tool.graph_name(), tool_res.suc_count
       ).as_bytes()
     ).chain_err(
       || format!(
@@ -151,7 +151,7 @@ set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
         format!(
           ", \\\n  \"{}\" using 1:2 w lp ls {} t '{} ({})'",
           data_file.to_string_lossy(), index,
-          tool_res.tool.graph, tool_res.suc_count
+          tool_res.tool.graph_name(), tool_res.suc_count
         ).as_bytes()
       ).chain_err(
         || format!(

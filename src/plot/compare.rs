@@ -6,11 +6,11 @@ use errors::* ;
 
 /// Generates the comparative scatterplot between two tools.
 pub fn work(
-  conf: & PlotConf, file_1: String, file_2: String
+  conf: & PlotConf, file_1: & str, file_2: & str
 ) -> Res< Option<String> > {
   log!{ conf => "  loading tool data..." }
   let mut run_res = ::common::res::RunRes::of_files(
-    vec![ file_1.clone(), file_2.clone() ]
+    vec![ file_1.into(), file_2.into() ]
   ) ? ;
   
   if conf.no_errors {
@@ -315,8 +315,8 @@ plot \\
   x notitle with lines ls 1\
         ", output_file,
         title,
-        res_1.tool.graph, res_1.suc_count, run_res.benchs.len(),
-        res_2.tool.graph, res_2.suc_count, run_res.benchs.len(),
+        res_1.tool.graph_name(), res_1.suc_count, run_res.benchs.len(),
+        res_2.tool.graph_name(), res_2.suc_count, run_res.benchs.len(),
         min_time.as_sec_str(), max_range,
         min_time.as_sec_str(), max_range,
         tmo_time.as_sec_str(), tmo_time.as_sec_str(),
@@ -338,9 +338,9 @@ plot \\
       path, desc.map(
         |desc| format!(
           "title '{} ({})'",
-          desc, code_to_count.get(& code).map(|cnt| * cnt).unwrap_or(0)
+          desc, code_to_count.get(& code).cloned().unwrap_or(0)
         )
-      ).unwrap_or( "notitle".into() ),
+      ).unwrap_or_else( || "notitle".into() ),
       index + 4
     ).chain_err(
       || format!(

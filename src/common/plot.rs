@@ -57,7 +57,7 @@ impl PlotConf {
         true
       }
     } else { false } ;
-    let file = file.path_subst() ;
+
     let (fmt, file) = {
       if let Some(s) = Path::new( & file.clone() ).extension() {
         match & s.to_string_lossy().into_owned() as & str {
@@ -128,8 +128,8 @@ pub enum PlotFmt {
 impl PlotFmt {
 
   /// Extension of a format.
-  pub fn ext(& self) -> & 'static str {
-    match * self {
+  pub fn ext(self) -> & 'static str {
+    match self {
       PlotFmt::Pdf => "pdf",
       PlotFmt::Svg => "svg",
       PlotFmt::Png => "png",
@@ -137,8 +137,8 @@ impl PlotFmt {
     }
   }
   /// Gnuplot terminal of a format.
-  pub fn term(& self) -> & 'static str {
-    match * self {
+  pub fn term(self) -> & 'static str {
+    match self {
       PlotFmt::Pdf => "\
         set term pdf enhanced dashed \
         font \"Helvetica,15\" background rgb \"0xFFFFFF\"\
@@ -155,8 +155,8 @@ impl PlotFmt {
     }
   }
   /// Gnuplot terminal of a format, `compare` version.
-  pub fn compare_term(& self) -> & 'static str {
-    match * self {
+  pub fn compare_term(self) -> & 'static str {
+    match self {
       PlotFmt::Pdf => "\
         set term pdf enhanced dashed \
         font \"Helvetica,15\" background rgb \"0xFFFFFF\" \
@@ -194,8 +194,8 @@ impl PlotFmt {
     }
   }
   /// Plot format string validator.
-  pub fn validator(s: String) -> Result<(), String> {
-    if let None = PlotFmt::of_str(& s) {
+  pub fn validator(s: & str) -> Result<(), String> {
+    if PlotFmt::of_str(& s).is_none() {
       Err( format!("expected `{}`, got `{}`", Self::values(), s) )
     } else {
       Ok(())
@@ -251,7 +251,7 @@ Runs `gnuplot` (or not) to generate the final plot\
     ).default_value("on").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("title").long("--title").help(
@@ -259,7 +259,7 @@ Runs `gnuplot` (or not) to generate the final plot\
     ).default_value("on").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("no_errors").long("--no_errs").help(
@@ -269,7 +269,7 @@ Completely ignore benchmarks for which at least one tool returned an error\
     ).default_value("off").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("merge").long("--merge").help(
@@ -279,7 +279,7 @@ Ignore validators, plot everything together\
     ).default_value("off").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("errs_as_tmos").long("--errs_as_tmos").help(
@@ -289,7 +289,7 @@ Consider errors as timeouts\
     ).default_value("off").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("gp_fmt").long("--to").help(
@@ -305,7 +305,7 @@ Alternatively the extension can be set on the <PLOT_FILE>:
     ).default_value("pdf").takes_value(true // ).number_of_values(
       // 1
     ).validator(
-      PlotFmt::validator
+      |s| PlotFmt::validator(& s)
     ).value_name( PlotFmt::values() )
   ).arg(
     Arg::with_name("PLOT_FILE").help(
@@ -332,7 +332,7 @@ pub fn plot_clap<'a>(
 
     let file = plot_matches.value_of("PLOT_FILE").expect(
       "unreachable(plot:cumul:FILE): required"
-    ).to_string() ;
+    ).path_subst() ;
 
     let run_gp = bool_of_str(
       plot_matches.value_of("run_gp").expect(

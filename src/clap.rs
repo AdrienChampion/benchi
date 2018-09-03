@@ -59,7 +59,7 @@ pub mod utils {
         "" => bail!(
           clap_err(
             "timeout argument",
-            format!("missing time unit `s` or `min`")
+            "missing time unit `s` or `min`"
           )
         ),
         s => bail!(
@@ -79,8 +79,8 @@ pub mod utils {
   }
 
   /// Timeout validator.
-  pub fn tmo_validator(s: String) -> Result<(), String> {
-    if let Ok(_) = tmo_of_str(& s) {
+  pub fn tmo_validator(s: & str) -> Result<(), String> {
+    if tmo_of_str(s).is_ok() {
       Ok(())
     } else {
       Err(
@@ -99,8 +99,8 @@ pub mod utils {
   }
 
   /// Validates boolean input.
-  pub fn bool_validator(s: String) -> Result<(), String> {
-    if let Some(_) = bool_of_str(& s) {
+  pub fn bool_validator(s: & str) -> Result<(), String> {
+    if bool_of_str(s).is_some() {
       Ok(())
     } else {
       Err(
@@ -110,8 +110,8 @@ pub mod utils {
   }
 
   /// Validates integer input.
-  pub fn int_validator(s: String) -> Result<(), String> {
-    match usize::from_str(& s) {
+  pub fn int_validator(s: & str) -> Result<(), String> {
+    match usize::from_str(s) {
       Ok(_) => Ok(()),
       Err(_) => Err(
         format!("expected an integer, got `{}`", s)
@@ -160,12 +160,12 @@ pub mod utils {
               conf.bad(& tool_a.short),
             )
           }
-          if tool_a.graph == tool_b.graph {
+          if tool_a.graph_name() == tool_b.graph_name() {
             bail!(
               "tools `{}` and `{}` have the same graph name `{}`",
               conf.emph(& tool_a.name),
               conf.emph(& tool_b.name),
-              conf.bad(& tool_a.graph),
+              conf.bad(& tool_a.graph_name()),
             )
           }
         }
@@ -317,7 +317,7 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
     ).default_value("off").takes_value(true// ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("quiet").short("-q").long("--quiet").help(
@@ -333,7 +333,7 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
     ).default_value("on").takes_value(true// ).number_of_values(
       // 1
     ).validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).after_help(
     "\
@@ -363,14 +363,12 @@ pub fn gconf_of_matches<'a>(matches: & Matches<'a>) -> GConf {
     Verb::Quiet
   } else if matches.primary_occurs("verbose") {
     Verb::Verbose
+  } else if matches.occurs("quiet") {
+    Verb::Quiet
+  } else if matches.occurs("verbose") {
+    Verb::Verbose
   } else {
-    if matches.occurs("quiet") {
-      Verb::Quiet
-    } else if matches.occurs("verbose") {
-      Verb::Verbose
-    } else {
-      Verb::Normal
-    }
+    Verb::Normal
   } ;
 
   // Colored.
@@ -528,7 +526,7 @@ fn clap_tmo() {
   fn test(secs: u64, string: & str) {
     let exp = Duration::new(secs, 0) ;
     println!("`{}` should be parsed as {}", string, exp.as_sec_str()) ;
-    assert!( tmo_validator(string.into()).is_ok() ) ;
+    assert!( tmo_validator(string).is_ok() ) ;
     assert_eq!( exp, tmo_of_str(string).unwrap() )
   }
 
@@ -537,17 +535,17 @@ fn clap_tmo() {
   test(42 * 60, "42min") ;
 
   assert!( tmo_of_str("").is_err() ) ;
-  assert!( tmo_validator( "".into() ).is_err() ) ;
+  assert!( tmo_validator( "" ).is_err() ) ;
   assert!( tmo_of_str("7").is_err() ) ;
-  assert!( tmo_validator( "7".into() ).is_err() ) ;
+  assert!( tmo_validator( "7" ).is_err() ) ;
   assert!( tmo_of_str("s").is_err() ) ;
-  assert!( tmo_validator( "s".into() ).is_err() ) ;
+  assert!( tmo_validator( "s" ).is_err() ) ;
   assert!( tmo_of_str("min").is_err() ) ;
-  assert!( tmo_validator( "min".into() ).is_err() ) ;
+  assert!( tmo_validator( "min" ).is_err() ) ;
   assert!( tmo_of_str("b42s").is_err() ) ;
-  assert!( tmo_validator( "b42s".into() ).is_err() ) ;
+  assert!( tmo_validator( "b42s" ).is_err() ) ;
   assert!( tmo_of_str("42 min").is_err() ) ;
-  assert!( tmo_validator( "42 min".into() ).is_err() ) ;
+  assert!( tmo_validator( "42 min" ).is_err() ) ;
 }
 
 

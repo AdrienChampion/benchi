@@ -30,12 +30,15 @@ pub struct RunConf {
   /// Validator Conf.
   vald_conf: ValdConf,
 }
+
 impl GConfExt for RunConf {
   fn gconf(& self) -> & GConf { & self.gconf }
 }
+
 impl ValdConfExt for RunConf {
   fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
 }
+
 impl RunConf {
   /// Creates a configuration.
   #[inline]
@@ -45,7 +48,6 @@ impl RunConf {
     out_dir: String, tool_file: String, bench_file: String,
     gconf: GConf, vald_conf: ValdConf
   ) -> Self {
-    let out_dir = out_dir.path_subst() ;
     RunConf {
       bench_par, tool_par, timeout, try, log_stdout,
       out_dir, tool_file, bench_file,
@@ -56,15 +58,13 @@ impl RunConf {
   /// Name of the validator for some tool.
   #[inline]
   pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
-    if tool.validator.is_none() {
-      None
-    } else {
-      let mut path = PathBuf::from(& self.out_dir) ;
-      path.push(& tool.short) ;
-      path.push("validator") ;
-      path.set_extension("sh") ;
-      Some(path)
-    }
+    tool.validator.as_ref() ? ;
+
+    let mut path = PathBuf::from(& self.out_dir) ;
+    path.push(& tool.short) ;
+    path.push("validator") ;
+    path.set_extension("sh") ;
+    Some(path)
   }
   /// Relative path of the validator of a tool.
   pub fn rel_validator_path_of(tool: & ToolConf) -> Option<String> {
@@ -148,7 +148,7 @@ sequentially\
     Arg::with_name("timeout").short("-t").long("--timeout").help(
       "Sets the timeout for each run"
     ).value_name(::consts::clap::tmo_format).validator(
-      tmo_validator
+      |s| tmo_validator(& s)
     ).default_value("1min").takes_value(
       true
     )/*.number_of_values(1)*/
@@ -158,7 +158,7 @@ sequentially\
     ).value_name("int").default_value("1").takes_value(
       true
     )/*.number_of_values(1)*/.validator(
-      int_validator
+      |s| int_validator( & s )
     )
   ).arg(
     Arg::with_name("para_tools").long("--tools").help(
@@ -166,7 +166,7 @@ sequentially\
     ).value_name("int").default_value("1").takes_value(
       true
     )/*.number_of_values(1)*/.validator(
-      int_validator
+      |s| int_validator( & s )
     )
   ).arg(
     Arg::with_name("try").long("--try").help(
@@ -174,7 +174,7 @@ sequentially\
     ).value_name("int").takes_value(
       true
     )/*.number_of_values(1)*/.validator(
-      int_validator
+      |s| int_validator( & s )
     )
   ).arg(
     Arg::with_name("log_stdout").long("--log").help(
@@ -184,7 +184,7 @@ sequentially\
     ).default_value("on").takes_value(
       true
     )/*.number_of_values(1)*/.validator(
-      bool_validator
+      |s| bool_validator(& s)
     ).value_name(bool_format)
   ).arg(
     Arg::with_name("BENCHS").help(
@@ -218,6 +218,8 @@ pub fn run_clap<'a>(
     None => return None,
   } ;
 
+  // ::load::test(& conf_file) ;
+
   let mut matches = matches.clone() ;
   // Original global configuration (ignores `conf_file`).
   let conf = ::clap::gconf_of_matches(& matches) ;
@@ -240,7 +242,7 @@ pub fn run_clap<'a>(
   // Output directory.
   let out_dir = matches.value_of("out_dir").expect(
     "unreachable(out_dir): default is provided"
-  ).to_string() ;
+  ).path_subst() ;
 
   // Bench and tool parallel settings.
   let bench_par = matches.value_of("para_benchs").map(

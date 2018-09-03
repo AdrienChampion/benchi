@@ -19,9 +19,8 @@ impl BenchRes {
 
   /// Sets the validation code.
   pub fn set_code(& mut self, code: Validation) {
-    match * self {
-      BenchRes::Success(_, ref mut opt) => * opt = Some(code),
-      _ => (),
+    if let BenchRes::Success(_, ref mut opt) = * self {
+      * opt = Some(code)
     }
   }
 
@@ -86,7 +85,7 @@ impl ToolRes {
     res: HashMap<BenchIndex, BenchRes>, vald_conf: ValdConf
   ) -> Self {
     let (mut suc_count, mut err_count, mut tmo_count) = (0, 0, 0) ;
-    for (_, res) in & res {
+    for res in res.values() {
       match * res {
         BenchRes::Success(_, _) => suc_count += 1,
         BenchRes::Error => err_count += 1,
@@ -113,7 +112,7 @@ impl ToolRes {
   /// Returns the lowest and highest runtime.
   pub fn time_interval(& self) -> Option<(Duration, Duration)> {
     let mut interval = None ;
-    for (_, res) in & self.res {
+    for res in self.res.values() {
       if let BenchRes::Success(time, _) = * res {
         let (lo, hi) = interval.unwrap_or( (time, time) ) ;
         interval = Some((
@@ -245,8 +244,8 @@ impl RunRes {
   /// Returns the number of errors changed **over all tools**.
   pub fn errs_as_tmos(& mut self) -> usize {
     let mut changed = 0 ;
-    for tool in self.tools.iter_mut() {
-      for (_, res) in tool.res.iter_mut() {
+    for tool in & mut self.tools {
+      for res in tool.res.values_mut() {
         if res.is_err() {
           changed += 1 ;
           * res = BenchRes::Timeout ;
@@ -264,8 +263,8 @@ impl RunRes {
   pub fn check_bench_index(
     & mut self, bench: BenchIndex, name: String
   ) -> Res<()> {
-    match self.benchs.get(& bench) {
-      Some(bench_name) => if name == * bench_name {
+    if let Some(bench_name) = self.benchs.get(& bench) {
+      if name == * bench_name {
         return Ok(())
       } else {
         let e: Res<()> = Err(
@@ -276,8 +275,7 @@ impl RunRes {
         return e.chain_err(
           || format!("benchmark with index {} is `{}`", bench, name)
         )
-      },
-      None => ()
+      }
     }
     self.benchs.insert(bench, name) ;
     Ok(())
@@ -395,7 +393,7 @@ impl<'a> DataFileHandler<'a> {
         } else {
           bail!( format!("unknown validation code {}", code) )
         }
-      } else if let & mut Some((ref mut file, ref path)) = unknown {
+      } else if let Some((ref mut file, ref path)) = * unknown {
         Ok((file, path))
       } else {
         * unknown = Some( Self::data_file_of(conf, Some("err_or_tmo")) ? ) ;

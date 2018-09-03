@@ -177,9 +177,8 @@ impl ValdConf {
   /// Dumps itself to a writer.
   pub fn dump<W: Write>(& self, w: & mut W) -> Res<()> {
     for (code, info) in & self.succ {
-      write!(
-        w, "# success: {}, {}, {}\n",
-        code, info.alias, info.desc
+      writeln!(
+        w, "# success: {}, {}, {}", code, info.alias, info.desc
       ).chain_err(
         || "while dumping validator information"
       ) ?
@@ -238,7 +237,6 @@ pub enum Clap {
 /// Can color things.
 pub trait ColorExt {
   /// The styles in the colorizer: emph, happy, sad, and bad.
-  #[inline]
   fn styles(& self) -> & Styles ;
   /// String emphasis.
   #[inline]
@@ -305,7 +303,6 @@ impl Styles {
 /// Has a verbosity setting.
 pub trait VerbExt {
   /// Access to the verbosity.
-  #[inline]
   fn verb(& self) -> & Verb ;
   /// True if quiet.
   #[inline]
@@ -379,7 +376,6 @@ impl GConf {
 /// Has a global conf.
 pub trait GConfExt: ColorExt {
   /// The global conf.
-  #[inline]
   fn gconf(& self) -> & GConf ;
   /// Opens a file in write mode. Creates parent directory if necessary.
   #[inline]
@@ -442,19 +438,28 @@ impl<T: GConfExt> VerbExt for T {
 
 
 /// A tool configuration.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolConf {
   /// Tool name.
   pub name: String,
   /// Short name.
   pub short: String,
   /// Graph name.
-  pub graph: String,
+  pub graph: Option<String>,
   /// Command (lines).
-  pub cmd: Vec<String>,
+  pub cmd: String,
   /// Optional validator.
   pub validator: Option<String>,
 }
+
+impl ToolConf {
+  /// Graph name of the tool.
+  pub fn graph_name(& self) -> & str {
+    self.graph.as_ref().unwrap_or(& self.name)
+  }
+}
+
+
 unsafe impl Sync for ToolConf {}
 impl ToolConf {
   /// Dumps info to a writer.
@@ -468,10 +473,10 @@ impl ToolConf {
       w, "  {}: {}", short_name_key, self.short
     ) ? ;
     writeln!(
-      w, "  {}: {}", graph_name_key, self.graph
+      w, "  {}: {}", graph_name_key, self.graph_name()
     ) ? ;
     write!(  w, "  {}: \"", cmd_key) ? ;
-    let mut iter = self.cmd.iter() ;
+    let mut iter = Some(& self.cmd).into_iter() ;
     if let Some(s) = iter.next() {
       write!(w, "{}", s) ? ;
       for s in iter {
@@ -786,7 +791,7 @@ impl Instance {
           )
         ) ? ;
         file.metadata().chain_err(
-          || format!("could chmod validator file to executable")
+          || "could chmod validator file to executable"
         ) ? .permissions().set_mode(0o744)
       }
     }
@@ -832,7 +837,7 @@ impl Instance {
   /// If any, runs the validator for a tool on some benchmark.
   pub fn validate(
     & self, conf: & Arc<RunConf>,
-    tool: ToolIndex, bench: BenchIndex, status: & ExitStatus
+    tool: ToolIndex, bench: BenchIndex, status: ExitStatus
   ) -> Res< Option<ExitStatus> > {
     if let Some(path) = conf.validator_path_of( & self[tool] ) {
       use std::process::Stdio ;
@@ -856,12 +861,13 @@ impl Instance {
           "while running validator for `{}` on benchmark `{}`",
           conf.sad(& self[tool].name), conf.sad(format!("{}", bench))
         )
-      ).map(|s| Some(s))
+      ).map(Some)
     } else {
       Ok( None )
     }
   }
 }
+
 impl Index<BenchIndex> for Instance {
   type Output = String ;
   #[inline]
@@ -869,6 +875,7 @@ impl Index<BenchIndex> for Instance {
     & self.benchs[* index]
   }
 }
+
 impl Index<ToolIndex> for Instance {
   type Output = ToolConf ;
   #[inline]
@@ -876,6 +883,8 @@ impl Index<ToolIndex> for Instance {
     & self.tools[* index]
   }
 }
+
+
 
 /// Vector indexed by `ToolIndex`.
 pub struct ToolVec<T> {
@@ -888,10 +897,6 @@ impl<T> ToolVec<T> {
   pub fn with_capacity(n: usize) -> Self {
     ToolVec { vec: Vec::with_capacity(n) }
   }
-  /// Clears the vector.
-  pub fn into_iter(self) -> ::std::vec::IntoIter<T> {
-    self.vec.into_iter()
-  }
   /// Push.
   #[inline]
   pub fn push(& mut self, elem: T) {
@@ -903,17 +908,28 @@ impl<T> ToolVec<T> {
     self.vec.pop()
   }
 }
+
 impl<T> Index<ToolIndex> for ToolVec<T> {
   type Output = T ;
   fn index(& self, index: ToolIndex) -> & T {
     & self.vec[* index]
   }
 }
+
 impl<T> IndexMut<ToolIndex> for ToolVec<T> {
   fn index_mut(& mut self, index: ToolIndex) -> & mut T {
     & mut self.vec[* index]
   }
 }
+
+impl<T> IntoIterator for ToolVec<T> {
+  type Item = T ;
+  type IntoIter = ::std::vec::IntoIter<T> ;
+  fn into_iter(self) -> ::std::vec::IntoIter<T> {
+    self.vec.into_iter()
+  }
+}
+
 impl<T> FromIterator<T> for ToolVec<T> {
   fn from_iter< Iter: IntoIterator<Item = T> >(iter: Iter) -> Self {
     ToolVec { vec: iter.into_iter().collect() }
@@ -933,7 +949,6 @@ impl<T> FromIterator<T> for ToolVec<T> {
 /// Extends `Duration`.
 pub trait DurationExt {
   /// Time in seconds with nanosecond precision as string.
-  #[inline]
   fn as_sec_str(& self) -> String ;
   /// Zero duration.
   #[inline]
@@ -1016,7 +1031,7 @@ impl ExitStatusExt for ExitStatus {
 
 
 /// Dumps the example configuration file somewhere.
-pub fn example_conf_file(conf: & GConf, file: String) -> Res<()> {
+pub fn example_conf_file(conf: & GConf, file: & str) -> Res<()> {
   use std::io::Write ;
   log!{ conf => "Opening `{}`...", conf.emph(& file) }
   let mut writer = conf.open_file_writer(& file).chain_err(
