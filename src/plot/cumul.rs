@@ -4,8 +4,6 @@ use std::iter::Iterator ;
 
 use common::* ;
 use common::plot::* ;
-use errors::* ;
-
 
 /// Generates the cumulative plot between several tools.
 pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {

@@ -4,7 +4,6 @@ use clap_lib::{
   App, Arg, SubCommand, ArgMatches, AppSettings
 } ;
 
-use errors::* ;
 use common::* ;
 use common::run::* ;
 use common::plot::* ;
@@ -25,7 +24,6 @@ macro_rules! while_opening {
 
 /// Useful functions for clap.
 pub mod utils {
-  use errors::* ;
   use common::* ;
   use consts::clap::* ;
 

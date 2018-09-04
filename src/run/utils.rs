@@ -1,10 +1,8 @@
-/*! Utils for running benchmarks.
+//! Utils for running benchmarks.
+//!
+//! Note that `ToolRun`s communicate the results directly to the master. All
+//! they send to `BenchRun`s is that they're done.
 
-Note that `ToolRun`s communicate the results directly to the master. All they
-send to `BenchRun`s is that they're done.
-*/
-
-use errors::* ;
 use common::* ;
 
 pub use std::thread::{ spawn, sleep, JoinHandle } ;

@@ -23,7 +23,7 @@ pub use pbr::{ ProgressBar, MultiBar } ;
 
 use ansi::{ Style, Colour } ;
 
-use errors::* ;
+pub use errors::* ;
 
 /// Map from strings to something.
 pub type StrMap<T> = Map<String, T> ;

@@ -5,8 +5,6 @@ pub mod compare ;
 
 use common::* ;
 use common::plot::* ;
-use errors::* ;
-
 
 /// Runs `gnuplot` and the user's command depending on the configuration.
 pub fn run_stuff(conf: & PlotConf, final_file: & str) -> Res<()> {

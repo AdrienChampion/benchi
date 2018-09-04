@@ -1,8 +1,6 @@
 //! Run configuration loader.
 
 use common::* ;
-use errors::* ;
-
 
 /// A run configuration.
 #[derive(Debug, Clone)]

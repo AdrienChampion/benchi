@@ -202,7 +202,7 @@ pub fn run_clap<'a>(
     None => return None,
   } ;
 
-  // ::load::test(& conf_file) ;
+  ::load::test(& conf_file) ;
 
   let mut matches = matches.clone() ;
   // Original global configuration (ignores `conf_file`).

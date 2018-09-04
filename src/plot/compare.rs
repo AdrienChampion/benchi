@@ -2,7 +2,6 @@
 
 use common::* ;
 use common::plot::* ;
-use errors::* ;
 
 /// Generates the comparative scatterplot between two tools.
 pub fn work(
