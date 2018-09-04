@@ -39,7 +39,7 @@ pub fn work(conf: & PlotConf, files: Vec<String>) -> Res< Option<String> > {
       warn!(
         conf =>
           "ignoring data for `{}`: everything is timeout or error",
-          conf.sad(& tool_res.tool.name)
+          conf.sad( tool_res.tool.ident() )
       ) ;
       empty_data.push(tool_res)
     } else {

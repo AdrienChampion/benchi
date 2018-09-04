@@ -37,7 +37,7 @@ pub fn master_to_bench_channel() -> (
 
 /// Channel from bench runs to tool runs.
 pub fn bench_to_tool_channel() -> (
-  Sender< (ToolIndex, BenchIndex) >, Receiver< (ToolIndex, BenchIndex) >
+  Sender< (ToolIdx, BenchIndex) >, Receiver< (ToolIdx, BenchIndex) >
 ) {
   channel()
 }
@@ -50,7 +50,7 @@ pub enum BenchRes {
   /// Successful.
   Success(Duration, ExitStatus),
   /// Error.
-  Error(ExitStatus),
+  Error(Duration, ExitStatus),
   /// Error in `benchi`.
   BenchiError(Error),
 }
@@ -59,7 +59,7 @@ pub enum BenchRes {
 #[derive(Debug)]
 pub struct RunRes {
   /// Tool index.
-  pub tool: ToolIndex,
+  pub tool: ToolIdx,
   /// Bench index.
   pub bench: BenchIndex,
   /// Result.

@@ -85,7 +85,7 @@ impl PlotConf {
   /// Plot data file specific to a tool.
   ///
   /// Corresponds to `<plot_path>/<plot_file_basename>_<tool_short>.data`.
-  pub fn data_file_path_of(& self, tool: & ToolConf) -> Res<PathBuf> {
+  pub fn data_file_path_of(& self, tool: & NewToolConf) -> Res<PathBuf> {
     let mut res = PathBuf::new() ;
     let path = Path::new(& self.file) ;
     res.push(
@@ -106,7 +106,7 @@ impl PlotConf {
         )
       )
     } ;
-    res.push( & format!("{}_{}.data", file_name, tool.short) ) ;
+    res.push( & format!("{}_{}.data", file_name, tool.ident()) ) ;
     Ok(res)
   }
 }

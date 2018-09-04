@@ -13,14 +13,6 @@ use consts::clap::* ;
 
 use clap::utils::* ;
 
-macro_rules! while_opening {
-  ($conf:expr, $file:expr) => (
-    || format!(
-      "while opening file {}",
-      $conf.emph( $file.as_ref().to_str().expect("ill-formated file name...") )
-    )
-  ) ;
-}
 
 /// Useful functions for clap.
 pub mod utils {
@@ -115,98 +107,6 @@ pub mod utils {
         format!("expected an integer, got `{}`", s)
       ),
     }
-  }
-
-
-
-  /// Loads the tool file.
-  pub fn load_conf<F: AsRef<Path>>(conf: & GConf, tool_file: F) -> Res<
-    ( ValdConf, Vec<ToolConf>, ::clap_lib::ArgMatches<'static> )
-  > {
-    use std::io::Read ;
-    use clap::* ;
-
-    let mut file = try!(
-      File::open(& tool_file).chain_err( while_opening!(conf, tool_file) )
-    ) ;
-    let mut buff = Vec::with_capacity(217) ;
-    let _ = try!(
-      file.read_to_end(& mut buff).chain_err( while_opening!(conf, tool_file) )
-    ) ;
-
-    let (options, vald_conf, tool_confs) = try!(
-      ::parse::work(& GConf::default(), & buff)
-    ) ;
-
-    // Make sure names are unique.
-    {
-      let mut tool_iter = tool_confs.iter() ;
-      while let Some(tool_a) = tool_iter.next() {
-        let other_tools = tool_iter.clone() ;
-        for tool_b in other_tools {
-          if tool_a.name == tool_b.name {
-            bail!(
-              "two of the tools have the same name `{}`",
-              conf.bad(& tool_a.name),
-            )
-          }
-          if tool_a.short == tool_b.short {
-            bail!(
-              "tools `{}` and `{}` have the same short name `{}`",
-              conf.emph(& tool_a.name),
-              conf.emph(& tool_b.name),
-              conf.bad(& tool_a.short),
-            )
-          }
-          if tool_a.graph_name() == tool_b.graph_name() {
-            bail!(
-              "tools `{}` and `{}` have the same graph name `{}`",
-              conf.emph(& tool_a.name),
-              conf.emph(& tool_b.name),
-              conf.bad(& tool_a.graph_name()),
-            )
-          }
-        }
-      }
-    }
-
-    let mut actual_options = vec![ "benchi.conf_file".to_string() ] ;
-    #[allow(unused_assignments)]
-    for line in options {
-      let mut buf = String::new() ;
-      for c in line.chars() {
-        match c {
-          ' ' | '\t' => if ! buf.is_empty() {
-            actual_options.push(buf) ;
-            buf = String::new()
-          },
-          _ => buf.push(c),
-        }
-      }
-      if ! buf.is_empty() {
-        actual_options.push(buf) ;
-        buf = String::new()
-      }
-    }
-
-    let option_clap = main_app().subcommand(
-      conf_run_subcommand()
-    ) ;
-    let matches = match option_clap.get_matches_from_safe(& actual_options) {
-      Ok(matches) => matches,
-      Err(e) => {
-        println!(
-          "{} while parsing options of configuration file {}:",
-          conf.bad("Error"),
-          conf.emph(
-            tool_file.as_ref().to_str().expect("ill-formated file name...")
-          )
-        ) ;
-        e.exit()
-      },
-    } ;
-
-    Ok( (vald_conf, tool_confs, matches) )
   }
 }
 

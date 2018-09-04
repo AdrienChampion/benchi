@@ -16,7 +16,4 @@ serde = "*"
 serde_derive = "*"
 toml = "*"
 wait-timeout = "*"
-
-[dependencies.nom]
-version = "^3.0"
-features = [ "regex", "regexp" ]
+mylib = { git = "https://github.com/AdrienChampion/mylib" }

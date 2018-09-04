@@ -1,0 +1,25 @@
+options = "-v run -o test_runs -t 1s --benchs 1 --tools 1"
+
+run = [ "echo_1", "echo_2" ]
+
+[tools]
+
+  [tools.echo_1]
+  cmd = "echo"
+  validator = "my_validator"
+
+  [tools.echo_2]
+  cmd = "echo"
+  validator = "my_validator"
+
+
+[codes]
+okay = { code = 0, graph = "Ok" }
+
+
+[validators]
+
+
+my_validator = '''
+exit $code
+'''

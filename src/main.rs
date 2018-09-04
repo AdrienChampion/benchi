@@ -10,8 +10,6 @@ extern crate pbr ;
 extern crate ansi_term as ansi ;
 extern crate regex ;
 #[macro_use]
-extern crate nom ;
-#[macro_use]
 extern crate error_chain ;
 #[macro_use]
 extern crate lazy_static ;
@@ -21,13 +19,15 @@ extern crate serde ;
 extern crate serde_derive ;
 extern crate toml ;
 extern crate wait_timeout ;
+#[macro_use]
+extern crate mylib ;
 
 pub mod errors ;
 pub mod consts ;
 #[macro_use]
 pub mod common ;
 pub mod clap ;
-pub mod parse ;
+// pub mod parse ;
 pub mod load ;
 pub mod run ;
 pub mod plot ;
@@ -37,46 +37,27 @@ use common::* ;
 use common::run::* ;
 
 
-macro_rules! while_opening {
-  ($conf:expr, $file:ident) => ({
-    let e = ErrorKind::Msg(
-      format!("while opening file {}", $conf.emph(& $conf.$file))
-    ) ;
-    || e
-  }) ;
-}
-
-
-
-
-
-
-
 /// Entry point.
 fn main() {
 
   match clap::work() {
     Ok( Clap::Run(mut conf, tools) ) => {
 
-      log!{
-        conf, verb =>
-          "{}:", conf.emph("Configuration") ;
-          "           timeout: {}s", conf.timeout.as_secs() ;
-          "           out dir: {}", conf.happy(& conf.out_dir) ;
-          "      benchs in //: {}", conf.bench_par ;
-          "       tools in //: {}", conf.tool_par ;
-          "  max threads used: {}",
-          conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
-          {
-            if let Some(max) = conf.try {
-              log!{ conf, verb => "               try: {}", max }
-            }
+      log!{ conf, verb =>
+        "{}:", conf.emph("Configuration") ;
+        "           timeout: {}s", conf.timeout.as_secs() ;
+        "           out dir: {}", conf.happy(& conf.out_dir) ;
+        "      benchs in //: {}", conf.bench_par ;
+        "       tools in //: {}", conf.tool_par ;
+        "  max threads used: {}",
+        conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
+        {
+          if let Some(max) = conf.try {
+            log!{ conf, verb => "               try: {}", max }
           }
-          ""
-      }
-
-      log!{
-        conf, verb => "Loading instance..."
+        }
+        "" ;
+        "Loading instance..."
       }
 
       let instance = match load_instance(& mut conf, tools) {
@@ -119,45 +100,12 @@ fn main() {
 }
 
 
-fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
-
-  // Make sure names are unique.
-  {
-    let mut tool_iter = tools.iter() ;
-    while let Some(tool_a) = tool_iter.next() {
-      let other_tools = tool_iter.clone() ;
-      for tool_b in other_tools {
-        if tool_a.name == tool_b.name {
-          bail!(
-            "two of the tools have the same name `{}`",
-            conf.bad(& tool_a.name),
-          )
-        }
-        if tool_a.short == tool_b.short {
-          bail!(
-            "tools `{}` and `{}` have the same short name `{}`",
-            conf.emph(& tool_a.name),
-            conf.emph(& tool_b.name),
-            conf.bad(& tool_a.short),
-          )
-        }
-        if tool_a.graph == tool_b.graph {
-          bail!(
-            "tools `{}` and `{}` have the same graph name `{}`",
-            conf.emph(& tool_a.name),
-            conf.emph(& tool_b.name),
-            conf.bad(& tool_a.graph_name()),
-          )
-        }
-      }
-    }
-  }
-
+fn load_instance(conf: & mut RunConf, tools: NewToolConfs) -> Res<Instance> {
   let mut benchs = {
 
     let buff_read = try!(
       File::open(& conf.bench_file).map(BufReader::new).chain_err(
-        while_opening!(conf, bench_file)
+        || "while opening benchmark listing file"
       )
     ) ;
     let mut benchs = Vec::with_capacity( 200 ) ;
@@ -194,24 +142,6 @@ fn load_instance(conf: & mut RunConf, tools: Vec<ToolConf>) -> Res<Instance> {
 fn work(conf: & Arc<RunConf>, instance: & Arc<Instance>) -> Res<()> {
   if instance.tool_len() == 0 || instance.bench_len() == 0 {
     return Ok(())
-  }
-
-  // Check that the timeout command exists.
-  if Command::new(
-    "timeout"
-  ).arg("1").arg("echo").arg("test").stdout(
-    ::std::process::Stdio::null()
-  ).stderr(
-    ::std::process::Stdio::null()
-  ).stdin(
-    ::std::process::Stdio::null()
-  ).status().is_err() {
-    bail!(
-      format!(
-        "could not find `{}` command, make sure it is installed",
-        conf.emph("timeout")
-      )
-    )
   }
 
   // Create output directory if it doesn't already exist.
@@ -273,7 +203,7 @@ fn work(conf: & Arc<RunConf>, instance: & Arc<Instance>) -> Res<()> {
           log!{
             conf =>
               "  {}: {} solved, average runtime: {}",
-              conf.emph(& instance[tool].name), cnt,
+              conf.emph( instance[tool].ident() ), cnt,
               if cnt > 0 { avg.as_sec_str() } else {
                 "no benchmark passed".into()
               }

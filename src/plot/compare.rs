@@ -30,7 +30,7 @@ pub fn work(
     }
   }
 
-  let mut data_files = ::common::res::DataFileHandler::mk(conf, & run_res) ? ;
+  let mut data_files = ::common::res::DataFileHandler::new(conf, & run_res) ? ;
 
   let mut res_2 = if let Some(res) = run_res.tools.pop() { res } else {
     bail!("[bug] there's no data in this run result")
@@ -48,14 +48,14 @@ pub fn work(
     warn!(
       conf =>
         "data for `{}`: everything is timeout or error",
-        conf.bad(& res_1.tool.name)
+        conf.bad( res_1.tool.ident() )
     )
   }
   if res_2.suc_count == 0 {
     warn!(
       conf =>
         "data for `{}`: everything is timeout or error",
-        conf.bad(& res_2.tool.name)
+        conf.bad( res_2.tool.ident() )
     )
   }
 
@@ -98,13 +98,13 @@ pub fn work(
   let (mut dble_tmos, mut dble_errs) = (0, 0) ;
 
   let (res_1_name, res_2_name) = (
-    res_1.tool.name.clone(), res_2.tool.name.clone()
+    res_1.tool.ident().clone(), res_2.tool.ident().clone()
   ) ;
 
   let mut code_to_count = HashMap::new() ;
 
-  for (bench, bench_res_1) in res_1.res.drain() {
-    if let Some(bench_res_2) = res_2.res.remove(& bench) {
+  for (bench, bench_res_1) in res_1.benchs.drain() {
+    if let Some(bench_res_2) = res_2.benchs.remove(& bench) {
       if bench_res_1.is_tmo() && bench_res_2.is_tmo() {
         dble_tmos += 1
       } else if bench_res_1.is_err() && bench_res_2.is_err() {
@@ -123,21 +123,21 @@ pub fn work(
                 "{} finished with {}, but {} finished with {}",
                 conf.emph(& res_1_name),
                 conf.sad(
-                  & res_1.vald_conf.get(code_1).ok_or_else(
+                  & res_1.codes.get(code_1).ok_or_else(
                     || format!(
                       "[bug] unknown validation code {} for {}",
                       code_1, res_1_name
                     )
-                  )?.desc
+                  )?.graph
                 ),
                 conf.emph(& res_2_name),
                 conf.sad(
-                  & res_2.vald_conf.get(code_2).ok_or_else(
+                  & res_2.codes.get(code_2).ok_or_else(
                     || format!(
                       "[bug] unknown validation code {} for {}",
                       code_2, res_2_name
                     )
-                  )?.desc
+                  )?.graph
                 ) ;
                 "skipping this benchmark"
             ) ;
@@ -150,9 +150,9 @@ pub fn work(
       let (data_file, data_file_path) = data_files.file_of(code) ? ;
       writeln!(
         data_file, "{} {} {}", bench_res_1.map(
-          |time, _| time, || tmo_time, || err_time
+          |time, _| time, || tmo_time, |_| err_time
         ).as_sec_str(), bench_res_2.map(
-          |time, _| time, || tmo_time, || err_time
+          |time, _| time, || tmo_time, |_| err_time
         ).as_sec_str(),
         run_res.benchs.get(& bench).ok_or_else(
           || format!("[bug] unknown benchmark {}", bench)
@@ -169,7 +169,7 @@ pub fn work(
     }
   }
 
-  if ! not_in_res_2.is_empty() || ! res_2.res.is_empty() {
+  if ! not_in_res_2.is_empty() || ! res_2.benchs.is_empty() {
     warn!(
       conf => {
         if ! not_in_res_2.is_empty() {
@@ -177,17 +177,17 @@ pub fn work(
             conf, line =>
               "found {} benchmarks in `{}`'s data that are not in `{}`'s",
               conf.sad(& format!("{}", not_in_res_2.len())),
-              conf.emph(& res_1.tool.name),
-              conf.emph(& res_2.tool.name)
+              conf.emph( res_1.tool.ident() ),
+              conf.emph( res_2.tool.ident() )
           )
         }
-        if ! res_2.res.is_empty() {
+        if ! res_2.benchs.is_empty() {
           warn!(
             conf, line =>
               "found {} benchmarks in `{}`'s data that are not in `{}`'s",
-              conf.sad(& format!("{}", res_2.res.len())),
-              conf.emph(& res_2.tool.name),
-              conf.emph(& res_1.tool.name)
+              conf.sad(& format!("{}", res_2.benchs.len())),
+              conf.emph( res_2.tool.ident() ),
+              conf.emph( res_1.tool.ident() )
           )
         }
       }

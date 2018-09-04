@@ -59,15 +59,15 @@ impl BenchRes {
 /// Stores the results for a tool on some benchmarks.
 pub struct ToolRes {
   /// Tool configuration.
-  pub tool: ToolConf,
+  pub tool: NewToolConf,
   /// Timeout.
   pub timeout: Duration,
   /// Data file.
   pub file: String,
   /// Bench results.
-  pub res: HashMap<BenchIndex, BenchRes>,
-  /// Validation configuration.
-  pub vald_conf: ValdConf,
+  pub benchs: BenchHMap<NewBenchRes>,
+  /// Exit codes.
+  pub codes: NewCodes,
   /// Number of successes.
   pub suc_count: usize,
   /// Number of errors.
@@ -75,45 +75,50 @@ pub struct ToolRes {
   /// Number of timeouts.
   pub tmo_count: usize,
 }
-impl ValdConfExt for ToolRes {
-  fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
+impl CodesExt for ToolRes {
+  fn codes(& self) -> & NewCodes { & self.codes }
 }
 impl ToolRes {
-  /// Creates a tool result.
-  pub fn mk(
-    tool: ToolConf, timeout: Duration, file: String,
-    res: HashMap<BenchIndex, BenchRes>, vald_conf: ValdConf
+  /// Constructor.
+  fn new(
+    tool: NewToolConf, timeout: Duration, file: String, codes: NewCodes,
+    benchs: BenchHMap<NewBenchRes>,
   ) -> Self {
     let (mut suc_count, mut err_count, mut tmo_count) = (0, 0, 0) ;
-    for res in res.values() {
-      match * res {
-        BenchRes::Success(_, _) => suc_count += 1,
-        BenchRes::Error => err_count += 1,
-        BenchRes::Timeout => tmo_count += 1,
+    for res in benchs.values() {
+      match res {
+        NewBenchRes::Success(_, _) => suc_count += 1,
+        NewBenchRes::Error(_) => err_count += 1,
+        NewBenchRes::Timeout => tmo_count += 1,
       }
     }
     ToolRes {
-      tool, timeout, file, res, vald_conf, suc_count, err_count, tmo_count
+      tool, timeout, file, codes, benchs, suc_count, err_count, tmo_count
     }
   }
+
   /// Loads a tool result from a file.
   fn of(file: String, run_res: & mut RunRes) -> Res<Self> {
-    let read = ::std::fs::OpenOptions::new().read(true).open(& file).chain_err(
+    let mut reader = ::std::fs::OpenOptions::new().read(true).open(
+      & file
+    ).chain_err(
       || format!("while opening data file `{}`", file)
     ) ? ;
-    let mut br = BufReader::new(read) ;
-    let mut buffer = Vec::with_capacity(1207) ;
-    br.read_to_end(& mut buffer).chain_err(
+    let mut txt = String::new() ;
+    reader.read_to_string(& mut txt).chain_err(
       || format!("error reading file `{}`", file)
     ) ? ;
-    ::parse::dump(& buffer, file, run_res)
+    ::load::res(
+      & GConf::mk(Verb::Normal, true, false), run_res, & file
+    )
   }
 
-  /// Returns the lowest and highest runtime.
+  /// Returns the lowest and highest runtime for successful benchmarks.
   pub fn time_interval(& self) -> Option<(Duration, Duration)> {
     let mut interval = None ;
-    for res in self.res.values() {
-      if let BenchRes::Success(time, _) = * res {
+    for res in self.benchs.values() {
+      if let NewBenchRes::Success(time, _) = res {
+        let time = * time ;
         let (lo, hi) = interval.unwrap_or( (time, time) ) ;
         interval = Some((
           ::std::cmp::min(time, lo), ::std::cmp::max(time, hi)
@@ -127,11 +132,11 @@ impl ToolRes {
   ///
   /// Sorts (`<=`) all the success results.
   fn as_cumul_data(& self) -> Vec<Duration> {
-    let mut times = self.res.iter().fold(
-      Vec::with_capacity( self.res.len() ),
-      |mut vec, (_, res)| {
-        if let BenchRes::Success(time, _) = * res {
-          vec.push(time)
+    let mut times = self.benchs.values().fold(
+      Vec::with_capacity( self.benchs.len() ),
+      |mut vec, res| {
+        if let NewBenchRes::Success(time, _) = res {
+          vec.push(* time)
         }
         vec
       }
@@ -146,7 +151,7 @@ impl ToolRes {
   /// Returns the number of benchmarks written. If zero, then the data file
   /// was **not** created.
   pub fn write_cumul(& self, conf: & PlotConf) -> Res<usize> {
-    if self.res.is_empty() { return Ok(0) }
+    if self.benchs.is_empty() { return Ok(0) }
 
     let sorted = self.as_cumul_data() ;
     let count = sorted.len() ;
@@ -157,7 +162,7 @@ impl ToolRes {
     ).chain_err(
       || format!(
         "while opening file `{}`, plot data file for `{}`",
-        conf.emph( path.to_string_lossy() ), conf.emph( & self.tool.name )
+        conf.emph( path.to_string_lossy() ), conf.emph( self.tool.ident() )
       )
     ) ? ;
 
@@ -168,7 +173,7 @@ impl ToolRes {
       writeln!(tool_file, "{} {}", count, acc.as_sec_str()).chain_err(
         || format!(
           "while writing cumul plot data for `{}` to `{}`",
-          conf.emph(& self.tool.name),
+          conf.emph( self.tool.ident() ),
           conf.sad( path.to_string_lossy() )
         )
       ) ?
@@ -185,14 +190,14 @@ pub struct RunRes {
   /// Tools results.
   pub tools: Vec<ToolRes>,
   /// Benchs.
-  pub benchs: HashMap<BenchIndex, String>,
+  pub benchs: BenchHMap<String>,
 }
 impl RunRes {
   /// From some data files.
   pub fn of_files(files: Vec<String>) -> Res<Self> {
     let mut res = RunRes {
       tools: Vec::with_capacity( files.len() ),
-      benchs: HashMap::with_capacity( 211 ),
+      benchs: BenchHMap::with_capacity( 211 ),
     } ;
     for file in files {
       let tool_res = ToolRes::of(file, & mut res) ? ;
@@ -203,7 +208,7 @@ impl RunRes {
   }
 
   /// Removes all results for the benchmarks for which at least one of the
-  /// tools error'd.
+  /// tools errored.
   ///
   /// Returns the number of benchmarks dropped.
   pub fn rm_errs(& mut self) -> usize {
@@ -211,27 +216,27 @@ impl RunRes {
     let mut to_rm = vec![] ;
     let mut removed = 0 ;
     while let Some(mut current) = self.tools.pop() {
-      for (bench, res) in & current.res {
+      for (bench, res) in & current.benchs {
         if res.is_err() {
-          let prev = self.benchs.remove(& bench) ;
+          let prev = self.benchs.remove(bench) ;
           assert!( prev.is_some() ) ;
           to_rm.push(* bench)
         }
       }
       removed += to_rm.len() ;
       for bench in to_rm.drain(0..) {
-        let _ = current.res.remove(& bench) ;
+        let _ = current.benchs.remove(& bench) ;
         for tool in tool_buf.iter_mut().chain( self.tools.iter_mut() ) {
-          let _ = tool.res.remove(& bench) ;
+          let _ = tool.benchs.remove(& bench) ;
         }
       }
       tool_buf.push(current)
     }
     while let Some(tool) = tool_buf.pop() {
       self.tools.push(
-        ToolRes::mk(
+        ToolRes::new(
           tool.tool, tool.timeout, tool.file,
-          tool.res, tool.vald_conf
+          tool.codes, tool.benchs
         )
       )
     }
@@ -245,10 +250,10 @@ impl RunRes {
   pub fn errs_as_tmos(& mut self) -> usize {
     let mut changed = 0 ;
     for tool in & mut self.tools {
-      for res in tool.res.values_mut() {
+      for res in tool.benchs.values_mut() {
         if res.is_err() {
           changed += 1 ;
-          * res = BenchRes::Timeout ;
+          * res = NewBenchRes::Timeout ;
           tool.err_count -= 1 ;
           tool.tmo_count += 1 ;
         }
@@ -261,7 +266,7 @@ impl RunRes {
   /// Checks that a bench index corresponds to the right string. If there's no
   /// name associated to the index, adds it.
   pub fn check_bench_index(
-    & mut self, bench: BenchIndex, name: String
+    & mut self, bench: BenchIdx, name: String
   ) -> Res<()> {
     if let Some(bench_name) = self.benchs.get(& bench) {
       if name == * bench_name {
@@ -299,8 +304,8 @@ pub enum DataFileHandler<'a> {
   },
   /// Split, as many files as validators *used*.
   Split {
-    /// The `ValdConf` common to all tools.
-    vald_conf: ValdConf,
+    /// The `Codes` common to all tools.
+    codes: NewCodes,
     /// Map from error codes to data files and their path.
     map: HashMap<Validation, (File, PathBuf)>,
     /// File and path for unknowns (in case of double timeout / error).
@@ -313,19 +318,19 @@ impl<'a> DataFileHandler<'a> {
   /// Creates a handler from a RunRes and a conf.
   ///
   /// Error if not in `merged` mode and validation configuration don't match.
-  pub fn mk(conf: & 'a PlotConf, run_res: & RunRes) -> Res<Self> {
+  pub fn new(conf: & 'a PlotConf, run_res: & RunRes) -> Res<Self> {
 
     if conf.merge { // Merged, only one file needed.
       let (file, path) = Self::data_file_of(conf, None) ? ;
       Ok( DataFileHandler::Merged { file, path } )
 
     } else { // Not merging, check the validators make sense.
-      let vald_conf = {
+      let codes = {
         let mut iter = run_res.tools.iter() ;
         if let Some(tool_res) = iter.next() {
-          let vald_conf = tool_res.vald_conf.clone() ;
+          let codes = tool_res.codes.clone() ;
           for other_tool_res in iter {
-            if other_tool_res.vald_conf != vald_conf {
+            if other_tool_res.codes != codes {
               return (
                 Err(
                   format!(
@@ -343,26 +348,26 @@ impl<'a> DataFileHandler<'a> {
               ).chain_err(
                 || format!(
                   "data for tools {} and {} do not agree on their validators,",
-                  conf.bad(& tool_res.tool.name),
-                  conf.bad(& other_tool_res.tool.name)
+                  conf.bad(& tool_res.tool.ident()),
+                  conf.bad(& other_tool_res.tool.ident())
                 )
               )
             }
           }
-          vald_conf
+          codes
         } else {
           bail!("no data file provided")
         }
       } ;
 
-      if vald_conf.is_empty() {
-        // No validator provided, doing a merged.
+      if codes.is_empty() {
+        // No validator provided, doing a merge.
         let (file, path) = Self::data_file_of(conf, None) ? ;
         Ok( DataFileHandler::Merged { file, path } )
       } else {
-        let map = HashMap::with_capacity( vald_conf.len() ) ;
+        let map = HashMap::with_capacity( codes.len() ) ;
         Ok(
-          DataFileHandler::Split { vald_conf, map, unknown: None, conf }
+          DataFileHandler::Split { codes, map, unknown: None, conf }
         )
       }
     }
@@ -382,11 +387,11 @@ impl<'a> DataFileHandler<'a> {
       },
       
       DataFileHandler::Split {
-        ref mut map, ref vald_conf, ref mut unknown, ref conf,
+        ref mut map, ref codes, ref mut unknown, ref conf,
       } => if let Some(code) = code {
         // Not initialized yet, let's doodis.
-        if let Some(vald) = vald_conf.get(code) {
-          let file_n_path = Self::data_file_of(conf, Some(& vald.alias)) ? ;
+        if let Some(vald) = codes.get(code) {
+          let file_n_path = Self::data_file_of(conf, Some(& vald.name)) ? ;
           let _ = map.insert(code, file_n_path) ;
           let file_n_path = map.get_mut(& code).unwrap() ;
           Ok( (& mut file_n_path.0, & file_n_path.1) )
@@ -458,7 +463,7 @@ impl<'a> DataFileHandler<'a> {
         init, None, 1, None, & path.to_string_lossy().to_string()
       ),
       DataFileHandler::Split {
-        ref vald_conf, ref map, ref unknown, ..
+        ref codes, ref map, ref unknown, ..
       } => {
         let mut count = 0 ;
         if let Some((_, ref path)) = * unknown {
@@ -470,11 +475,11 @@ impl<'a> DataFileHandler<'a> {
         // gets index 0.
         count += 1 ;
         for ( code, & (_, ref path) ) in map {
-          let vald = vald_conf.get(* code).ok_or_else(
+          let vald = codes.get(* code).ok_or_else(
             || format!("unknown validation code {}", code)
           ) ? ;
           init = fold(
-            init, Some(* code), count, Some(& vald.desc),
+            init, Some(* code), count, Some(& vald.graph),
             & path.to_string_lossy().to_string()
           ) ? ;
           count += 1

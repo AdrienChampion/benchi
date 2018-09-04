@@ -26,30 +26,31 @@ pub struct RunConf {
   pub log_stdout: bool,
   /// Global configuration.
   gconf: GConf,
-  /// Validator Conf.
-  vald_conf: ValdConf,
+  /// Exit codes.
+  codes: NewCodes,
+}
+
+impl CodesExt for RunConf {
+  fn codes(& self) -> & NewCodes { & self.codes }
 }
 
 impl GConfExt for RunConf {
   fn gconf(& self) -> & GConf { & self.gconf }
 }
 
-impl ValdConfExt for RunConf {
-  fn vald_conf(& self) -> & ValdConf { & self.vald_conf }
-}
-
 impl RunConf {
   /// Name of the validator for some tool.
   #[inline]
-  pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
-    tool.validator.as_ref() ? ;
+  pub fn validator_path_of(& self, tool: & NewToolConf) -> Option<PathBuf> {
+    tool.validator() ? ;
 
     let mut path = PathBuf::from(& self.out_dir) ;
-    path.push(& tool.short) ;
+    path.push( tool.ident() ) ;
     path.push("validator") ;
     path.set_extension("sh") ;
     Some(path)
   }
+
   /// Relative path of the validator of a tool.
   pub fn rel_validator_path_of(tool: & ToolConf) -> Option<String> {
     if tool.validator.is_some() {
@@ -184,6 +185,7 @@ specified in the configuration file.\
   } else {
     run_app
   }
+
 }
 
 
@@ -202,22 +204,41 @@ pub fn run_clap<'a>(
     None => return None,
   } ;
 
-  ::load::test(& conf_file) ;
-
   let mut matches = matches.clone() ;
+
   // Original global configuration (ignores `conf_file`).
   let conf = ::clap::gconf_of_matches(& matches) ;
 
-  // Load configuration file.
-  let (vald_conf, tools, file_matches) = match load_conf(& conf, conf_file) {
+  let (options, tools, codes) = match ::load::run(& conf, & conf_file) {
     Ok(res) => res,
     Err(e) => return Some( Err(e) ),
   } ;
-  // Update hierarchical matches.
-  matches.push(file_matches) ;
 
   // Actual global configuration.
-  let conf = ::clap::gconf_of_matches(& matches) ;
+  let conf = if let Some(options) = options {
+    let option_clap = ::clap::main_app().subcommand(
+      conf_run_subcommand()
+    ) ;
+
+    let file_matches = match option_clap.get_matches_from_safe(
+      options.split_whitespace()
+    ) {
+      Ok(matches) => matches,
+      Err(e) => {
+        let e: Error = format!(
+          "while parsing options from tool configuration file {}: {}",
+          conf.bad(conf_file), e
+        ).into() ;
+        return Some( Err(e) )
+      },
+    } ;
+
+    matches.push(file_matches) ;
+
+    ::clap::gconf_of_matches(& matches)
+  } else {
+    conf
+  } ;
 
   let matches = matches.subcommand_matches("run").expect(
     "unreachable(run): already checked to be present"
@@ -289,12 +310,10 @@ pub fn run_clap<'a>(
     tool_file,
     bench_file,
     gconf: conf,
-    vald_conf
+    codes
   } ;
 
   Some(
-    Ok(
-      Clap::Run(run_conf, tools)
-    )
+    Ok( Clap::Run(run_conf, tools) )
   )
 }

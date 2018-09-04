@@ -1,7 +1,7 @@
 //! Common types and functions used by `benchi`.
 
 use std::fmt ;
-use std::ops::{ Index, IndexMut, Deref } ;
+use std::ops::{ Index, Deref } ;
 
 
 pub use std::str::FromStr ;
@@ -24,6 +24,20 @@ pub use pbr::{ ProgressBar, MultiBar } ;
 use ansi::{ Style, Colour } ;
 
 pub use errors::* ;
+
+pub use load::{
+  NewToolConf, NewToolConfs, NewCode, NewCodes, NewBenchRes
+} ;
+
+
+
+/// Grants access to validation codes.
+pub trait CodesExt {
+  /// Validation codes.
+  fn codes(& self) -> & NewCodes ;
+}
+
+
 
 /// Map from strings to something.
 pub type StrMap<T> = Map<String, T> ;
@@ -121,6 +135,25 @@ pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
 pub fn file_exists<P: AsRef<Path>>(path: P) -> bool {
   let path = path.as_ref() ;
   path.exists() && path.is_file()
+}
+
+
+
+
+
+/// Can convert to a TOML representation.
+pub trait ToToml: ::serde::Serialize {
+    /// TOML string version.
+    fn to_toml_str(& self) -> Res<String> {
+        ::toml::to_string_pretty(self).map_err(
+            |e| {
+                let e: Error = format!(
+                    "unable to write exit codes as TOML: {}", e
+                ).into() ;
+                e
+            }
+        )
+    }
 }
 
 
@@ -232,7 +265,7 @@ impl ValdConfExt for ValdConf {
 /// Clap result.
 pub enum Clap {
   /// Run mode.
-  Run(RunConf, Vec<ToolConf>),
+  Run(RunConf, NewToolConfs),
   /// Plot mode.
   Plot(PlotConf, PlotKind),
   /// Conf mode (explanation). Second parameter is the file to dump the
@@ -472,7 +505,7 @@ impl ToolConf {
   /// Dumps info to a writer.
   pub fn dump_info<W: Write>(
     & self, conf: & Arc<RunConf>, w: & mut W
-  ) -> ::std::io::Result<()> {
+  ) -> Res<()> {
     use consts::dump::* ;
 
     writeln!(w, "{} {{", self.name) ? ;
@@ -491,30 +524,24 @@ impl ToolConf {
       }
     }
     writeln!(w, "\"") ? ;
-    if let Some(path) = conf.validator_path_of(& self) {
-      writeln!(w, "  {}: ```", vald_key) ? ;
-      let file = ::std::fs::OpenOptions::new().read(true).open(& path) ? ;
-      for line in BufReader::new(file).lines() {
-        writeln!(w, "{}", line ?) ?
-      }
-      writeln!(w, "  ```") ? ;
-    }
+    // if let Some(path) = conf.validator_path_of(& self) {
+    //   writeln!(w, "  {}: ```", vald_key) ? ;
+    //   let file = ::std::fs::OpenOptions::new().read(true).open(& path) ? ;
+    //   for line in BufReader::new(file).lines() {
+    //     writeln!(w, "{}", line ?) ?
+    //   }
+    //   writeln!(w, "  ```") ? ;
+    // }
     writeln!(w, "}}") ? ;
 
-    if ! conf.vald_conf().is_empty() {
-      writeln!(w, "{} {{", vald_conf_key) ? ;
-      for (code, info) in conf.validators_iter() {
-        writeln!(
-          w, "  {}: {}, {}, {}", vald_conf_suc_key, code, info.alias, info.desc
-        ) ?
-      }
-      writeln!(w, "}}") ? ;
-    }
+    conf.codes().toml_write(w) ? ;
 
     writeln!(
       w, "{}: {}", timeout_key, conf.timeout.as_sec_str()
     ) ? ;
-    writeln!(w, "{}", & * cmt_pref)
+    writeln!(w, "{}", & * cmt_pref) ? ;
+
+    Ok(())
   }
 }
 
@@ -524,41 +551,29 @@ impl ToolConf {
 
 
 
-
-
-/// The index of a tool, just a usize.
-///
-/// Can **only** be created by a `ToolRange`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ToolIndex {
-  /// The index.
-  n: usize,
-}
-impl Deref for ToolIndex {
-  type Target = usize ;
-  fn deref(& self) -> & usize { & self.n }
+wrap_usize! {
+  /// Tool index.
+  ToolIdx
+  /// Range over tools.
+  range: ToolRng
+  /// Total map from tools to something.
+  map: ToolMap with iter: ToolMapIter
 }
 
-/// A range of tool indices.
-///
-/// Can only be created by an `Instance`.
-pub struct ToolRange {
-  /// Cursor.
-  current: usize,
-  /// Exclusive upper-bound.
-  max: usize
+
+wrap_usize! {
+  /// Bench index.
+  BenchIdx
+  /// Range over benchs.
+  range: BenchRng
+  /// Total map from benchs to something.
+  map: BenchMap with iter: BenchMapIter
+  /// Map from benchs to something.
+  hash map: BenchHMap
 }
-impl Iterator for ToolRange {
-  type Item = ToolIndex ;
-  #[inline]
-  fn next(& mut self) -> Option<ToolIndex> {
-    if self.current >= self.max { None } else {
-      let res = ToolIndex { n: self.current } ;
-      self.current += 1 ;
-      Some(res)
-    }
-  }
-}
+
+
+
 
 
 /// The index of a bench, just a usize.
@@ -616,7 +631,7 @@ impl Iterator for BenchRange {
 /// immutable.
 pub struct Instance {
   /// The tools.
-  tools: Vec<ToolConf>,
+  tools: NewToolConfs,
   /// The benchmarks.
   benchs: Vec<String>,
 }
@@ -624,13 +639,13 @@ unsafe impl Sync for Instance {}
 impl Instance {
   /// Creates an instance.
   #[inline]
-  pub fn mk(tools: Vec<ToolConf>, benchs: Vec<String>) -> Self {
+  pub fn mk(tools: NewToolConfs, benchs: Vec<String>) -> Self {
     Instance { tools, benchs }
   }
   /// Iterator over the tool indices of the instance.
   #[inline]
-  pub fn tools(& self) -> ToolRange {
-    ToolRange { current: 0, max: self.tools.len() }
+  pub fn tools(& self) -> ToolRng {
+    ToolRng::zero_to( self.tools.len() )
   }
   /// Iterator over the bench indices of the instance.
   #[inline]
@@ -661,17 +676,17 @@ impl Instance {
   /// Path to the directory of a tool.
   #[inline]
   pub fn path_of_tool(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> PathBuf {
     let mut path = PathBuf::from(& conf.out_dir) ;
-    path.push( & self[tool].short ) ;
+    path.push( & self[tool].ident() ) ;
     path
   }
 
   /// Stderr directory path of a tool.
   #[inline]
   pub fn err_path_of_tool(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> PathBuf {
     let mut path = self.path_of_tool(conf, tool) ;
     path.push("err") ;
@@ -680,7 +695,7 @@ impl Instance {
   /// Stdout directory path of a tool.
   #[inline]
   pub fn out_path_of_tool(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> PathBuf {
     let mut path = self.path_of_tool(conf, tool) ;
     path.push("out") ;
@@ -690,7 +705,7 @@ impl Instance {
   /// Path to the stderr of a tool on a bench.
   #[inline]
   pub fn err_path_of(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIndex
   ) -> PathBuf {
     let mut path = self.err_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -700,7 +715,7 @@ impl Instance {
   /// Path to the stdout of a tool on a bench.
   #[inline]
   pub fn out_path_of(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIndex
   ) -> PathBuf {
     let mut path = self.out_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -710,37 +725,37 @@ impl Instance {
   /// Creates the error path of a tool.
   #[inline]
   pub fn mk_err_dir(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> Res<()> {
     mk_dir( self.err_path_of_tool(conf, tool) ).chain_err(
       || format!(
         "while creating err directory for {}",
-        conf.emph( & self[tool].name )
+        conf.emph( & self[tool].ident() )
       )
     )
   }
   /// Creates the output path of a tool.
   #[inline]
   pub fn mk_out_dir(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> Res<()> {
     mk_dir( self.out_path_of_tool(conf, tool) ).chain_err(
       || format!(
         "while creating output directory for {}",
-        conf.emph( & self[tool].name )
+        conf.emph( & self[tool].ident() )
       )
     )
   }
   /// Initializes the data file and the validator for some tool.
   #[inline]
   pub fn init_data_file_and_validator(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> Res<File> {
     self.init_validator(conf, tool) ? ;
     let mut path = PathBuf::new() ;
     path.push(& conf.out_dir) ;
-    path.push(& self[tool].short) ;
-    path.set_extension("data") ;
+    path.push(& self[tool].ident()) ;
+    path.set_extension("toml") ;
     let mut tool_file = conf.open_file_writer(
       path.as_path()
     ).chain_err(
@@ -749,21 +764,32 @@ impl Instance {
         conf.sad(
           path.to_str().expect("non-UTF8 path")
         ),
-        conf.emph( & self[tool].name )
+        conf.emph( & self[tool].ident() )
       )
     ) ? ;
-    self[tool].dump_info(conf, & mut tool_file).chain_err(
-      || format!(
-        "while dumping info for tool `{}`",
-        conf.emph( & self[tool].name )
-      )
+
+    writeln!(
+        tool_file, "timeout = \"{}\"", conf.timeout.as_sec_str()
     ) ? ;
+    writeln!(tool_file) ? ;
+
+    writeln!(tool_file, "[tool]") ? ;
+    writeln!(
+        tool_file, "{}", self[tool].to_toml_str() ?
+    ) ? ;
+
+    writeln!(tool_file, "[codes]") ? ;
+    conf.codes().toml_write(& mut tool_file) ? ;
+
+    writeln!(tool_file, "[data]") ? ;
+
     Ok(tool_file)
   }
+
   /// Initializes the validator for some tool.
   #[inline]
   pub fn init_validator(
-    & self, conf: & Arc<RunConf>, tool: ToolIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx
   ) -> Res<()> {
     use std::os::unix::fs::PermissionsExt ;
     if let Some(path) = conf.validator_path_of( & self[tool] ) {
@@ -771,30 +797,23 @@ impl Instance {
         path.as_path(), true
       ).chain_err(
         || format!(
-          "while creating validator for `{}`", conf.sad(& self[tool].name)
+          "while creating validator for `{}`", conf.sad(& self[tool].ident())
         )
       ) ? ;
       file.write( ::consts::validator::pref.as_bytes() ).chain_err(
         || format!(
           "while while writing to validator file for `{}`",
-          conf.sad(& self[tool].name)
+          conf.sad(& self[tool].ident())
         )
       ) ? ;
-      for (code, info) in conf.validators_iter() {
-        file.write(
-          format!("# {}\n{}=\"{}\"\n", info.desc, info.alias, code).as_bytes()
-        ).chain_err(
-          || format!(
-            "while while writing to validator file for `{}`",
-            conf.sad(& self[tool].name)
-          )
-        ) ? ;
-      }
-      if let Some(s) = self[tool].validator.as_ref() {
+
+      conf.codes().bash_write(& mut file) ? ;
+
+      if let Some(s) = self[tool].validator() {
         file.write( s.as_bytes() ).chain_err(
           || format!(
             "while while writing to validator file for `{}`",
-            conf.sad(& self[tool].name)
+            conf.sad(& self[tool].ident())
           )
         ) ? ;
         file.metadata().chain_err(
@@ -811,10 +830,11 @@ impl Instance {
   /// - tool dir, err dir, out dir
   /// - data file
   /// - validators if any
-  pub fn init_tools<T, F: Fn(& mut T, & ToolConf)>(
+  pub fn init_tools<T, F>(
     & self, conf: & Arc<RunConf>, init: T, fold_fun: F
-  ) -> Res< (ToolVec<File>, T) > {
-    let mut tool_files = ToolVec::with_capacity( self.tool_len() ) ;
+  ) -> Res< (ToolMap<File>, T) >
+  where F: Fn(& mut T, & NewToolConf) {
+    let mut tool_files = ToolMap::with_capacity( self.tool_len() ) ;
     let mut fold_data = init ;
     // Tool init: output dirs, validators, data file, mastre data init.
     for tool in self.tools() {
@@ -844,7 +864,7 @@ impl Instance {
   /// If any, runs the validator for a tool on some benchmark.
   pub fn validate(
     & self, conf: & Arc<RunConf>,
-    tool: ToolIndex, bench: BenchIndex, status: ExitStatus
+    tool: ToolIdx, bench: BenchIndex, status: ExitStatus
   ) -> Res< Option<ExitStatus> > {
     if let Some(path) = conf.validator_path_of( & self[tool] ) {
       use std::process::Stdio ;
@@ -866,7 +886,7 @@ impl Instance {
       ).arg(out_path).arg(err_path).status().chain_err(
         || format!(
           "while running validator for `{}` on benchmark `{}`",
-          conf.sad(& self[tool].name), conf.sad(format!("{}", bench))
+          conf.sad(& self[tool].ident()), conf.sad(format!("{}", bench))
         )
       ).map(Some)
     } else {
@@ -883,63 +903,11 @@ impl Index<BenchIndex> for Instance {
   }
 }
 
-impl Index<ToolIndex> for Instance {
-  type Output = ToolConf ;
+impl Index<ToolIdx> for Instance {
+  type Output = NewToolConf ;
   #[inline]
-  fn index(& self, index: ToolIndex) -> & ToolConf {
-    & self.tools[* index]
-  }
-}
-
-
-
-/// Vector indexed by `ToolIndex`.
-pub struct ToolVec<T> {
-  /// The vector.
-  vec: Vec<T>,
-}
-impl<T> ToolVec<T> {
-  /// Creates a new vector.
-  #[inline]
-  pub fn with_capacity(n: usize) -> Self {
-    ToolVec { vec: Vec::with_capacity(n) }
-  }
-  /// Push.
-  #[inline]
-  pub fn push(& mut self, elem: T) {
-    self.vec.push(elem)
-  }
-  /// Pop.
-  #[inline]
-  pub fn pop(& mut self) -> Option<T> {
-    self.vec.pop()
-  }
-}
-
-impl<T> Index<ToolIndex> for ToolVec<T> {
-  type Output = T ;
-  fn index(& self, index: ToolIndex) -> & T {
-    & self.vec[* index]
-  }
-}
-
-impl<T> IndexMut<ToolIndex> for ToolVec<T> {
-  fn index_mut(& mut self, index: ToolIndex) -> & mut T {
-    & mut self.vec[* index]
-  }
-}
-
-impl<T> IntoIterator for ToolVec<T> {
-  type Item = T ;
-  type IntoIter = ::std::vec::IntoIter<T> ;
-  fn into_iter(self) -> ::std::vec::IntoIter<T> {
-    self.vec.into_iter()
-  }
-}
-
-impl<T> FromIterator<T> for ToolVec<T> {
-  fn from_iter< Iter: IntoIterator<Item = T> >(iter: Iter) -> Self {
-    ToolVec { vec: iter.into_iter().collect() }
+  fn index(& self, index: ToolIdx) -> & NewToolConf {
+    & self.tools[index]
   }
 }
 
@@ -954,9 +922,11 @@ impl<T> FromIterator<T> for ToolVec<T> {
 
 
 /// Extends `Duration`.
-pub trait DurationExt {
+pub trait DurationExt: Sized {
   /// Time in seconds with nanosecond precision as string.
   fn as_sec_str(& self) -> String ;
+  /// Duration from a string.
+  fn from_str(& str) -> Res<Self> ;
   /// Zero duration.
   #[inline]
   fn zero() -> Duration { Duration::new(0, 0) }
@@ -966,6 +936,47 @@ impl DurationExt for Duration {
     format!(
       "{}.{:0>9}", self.as_secs(), self.subsec_nanos()
     )
+  }
+  fn from_str(s: & str) -> Res<Self> {
+    use std::str::FromStr ;
+
+    macro_rules! failed {
+      () => ( bail!("illegal time string `{}`", s) ) ;
+      (opt $e:expr) => (
+        if let Some(res) = $e {
+          res
+        } else {
+          failed!()
+        }
+      ) ;
+      ($e:expr) => (
+        if let Ok(res) = $e {
+          res
+        } else {
+          failed!()
+        }
+      ) ;
+    }
+
+    let mut split = s.split('.') ;
+
+    let secs = failed!( opt split.next() ) ;
+    let nanos = failed!( opt split.next() ) ;
+
+    let secs = if secs.is_empty() {
+      0u64
+    } else {
+      failed!( u64::from_str(secs) )
+    } ;
+    let nanos = failed!(
+      u32::from_str(
+        & format!(
+          "{}{}", & nanos, "0".repeat( nanos.len() - 9 )
+        )
+      )
+    ) ;
+
+    Ok( Duration::new(secs, nanos) )
   }
 }
 

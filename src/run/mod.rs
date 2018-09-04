@@ -30,7 +30,7 @@ pub struct ToolRun {
   /// Sender to bench run.
   bench_run: Sender< usize >,
   /// Receiver from bench run.
-  from_bench_run: Receiver< (ToolIndex, BenchIndex) >
+  from_bench_run: Receiver< (ToolIdx, BenchIndex) >
 }
 unsafe impl Send for ToolRun {}
 impl ToolRun {
@@ -40,7 +40,7 @@ impl ToolRun {
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender<RunRes>,
     bench_run: Sender< usize >,
-    from_bench_run: Receiver< (ToolIndex, BenchIndex) >,
+    from_bench_run: Receiver< (ToolIdx, BenchIndex) >,
   ) -> Self {
     ToolRun {
       conf, instance, index, master, bench_run, from_bench_run
@@ -93,10 +93,10 @@ impl ToolRun {
 
   /// Runs a tool on a bench.
   fn run(
-    & self, tool_idx: ToolIndex, bench_idx: BenchIndex
+    & self, tool_idx: ToolIdx, bench_idx: BenchIndex
   ) -> Res<BenchRes> {
     let bench = & self.instance[bench_idx] ;
-    let kid_cmd = & self.instance[tool_idx].cmd ;
+    let kid_cmd = & self.instance[tool_idx].cmd() ;
 
     assert!( ! kid_cmd.is_empty() ) ;
 
@@ -140,31 +140,31 @@ impl ToolRun {
         status
       } ;
 
-      if self.conf.check_succ(& status) {
+      if self.conf.codes().is_succ(status) {
         Ok( BenchRes::Success(time, status) )
       } else {
-        Ok( BenchRes::Error(status) )
+        Ok( BenchRes::Error(time, status) )
       }
     }
   }
 
   /// Opens the stderr file for a bench for a tool.
   fn open_stderr_file_for(
-    & self, tool: ToolIndex, bench: BenchIndex
+    & self, tool: ToolIdx, bench: BenchIndex
   ) -> Res<File> {
     let path = self.instance.err_path_of(& self.conf, tool, bench) ;
     self.conf.open_file_writer(path).chain_err(
       || format!(
         "while opening error file to write stderr \
         of {} running on {}",
-        self.conf.emph( & self.instance[tool].name ),
+        self.conf.emph( & self.instance[tool].ident() ),
         self.conf.emph( self.instance.str_of_bench(bench) )
       )
     )
   }
   /// Opens the stdout file for a bench for a tool.
   fn open_stdout_file_for(
-    & self, tool: ToolIndex, bench: BenchIndex
+    & self, tool: ToolIdx, bench: BenchIndex
   ) -> Res<File> {
     let path = self.instance.out_path_of(& self.conf, tool, bench) ;
     self.conf.open_file_writer(& path).chain_err(
@@ -174,7 +174,7 @@ impl ToolRun {
         path.to_str().map(|s| s.to_string()).unwrap_or_else(
           || format!("{:?}", path)
         ),
-        self.conf.emph( & self.instance[tool].name ),
+        self.conf.emph( & self.instance[tool].ident() ),
         self.conf.emph( self.instance.str_of_bench(bench) )
       )
     )
@@ -197,7 +197,7 @@ pub struct BenchRun {
   /// Receiver from master.
   from_master: Receiver< BenchIndex >,
   /// Senders to tool runs.
-  tool_runs: Vec< Sender< (ToolIndex, BenchIndex) > >,
+  tool_runs: Vec< Sender< (ToolIdx, BenchIndex) > >,
   /// Receiver from tool runs.
   from_tool_runs: Receiver< usize >
 }
@@ -317,7 +317,7 @@ pub struct Master {
   /// Receiver from tool runs (lowest level).
   from_tool_runs: Receiver<RunRes>,
   /// Files in write mode to write the results to.
-  tool_files: ToolVec<File>,
+  tool_files: ToolMap<File>,
   /// Progress bar.
   pbar: Option< ProgressBar< ::std::io::Stdout > >,
   /// Number of errors.
@@ -327,10 +327,10 @@ pub struct Master {
   /// Average runtime (does not include timeouts and errors).
   ///
   /// Second element is the number of benchmarks solved.
-  pub avg_runtime: ToolVec<(Duration, u32)>,
+  pub avg_runtime: ToolMap<(Duration, u32)>,
   /// Stores the exit status for each tool on the current benchmark. `None` if
   /// timeout or error.
-  pub codes: HashMap< BenchIndex, ToolVec< Option<i32> > >,
+  pub codes: HashMap< BenchIndex, ToolMap< Option<i32> > >,
   /// Number of inconsistent results obtained.
   pub inconsistencies: usize
 }
@@ -374,9 +374,9 @@ impl Master {
     let (tool_files, avg_runtime) = instance.init_tools(
       & conf,
       // Fold init for average runtime.
-      ToolVec::with_capacity( instance.tool_len() ),
+      ToolMap::with_capacity( instance.tool_len() ),
       // Fold function for average runtime.
-      | avg_runtime: & mut ToolVec<_>, _ | {
+      | avg_runtime: & mut ToolMap<_>, _ | {
         avg_runtime.push( (Duration::from_secs(0), 0u32) ) ;
       }
     ) ? ;
@@ -488,7 +488,7 @@ impl Master {
   }
 
   /// Updates the average run time of a tool, iff it's below the timeout.
-  fn update_avg_runtime(& mut self, tool: ToolIndex, time: Duration) {
+  fn update_avg_runtime(& mut self, tool: ToolIdx, time: Duration) {
     if time < self.conf.timeout {
       let (ref mut avg, ref mut cnt) = self.avg_runtime[tool] ;
       // Incremental average computation.
@@ -511,7 +511,9 @@ impl Master {
             self.cleanup(tool)
           }
 
-          let data_line_end = match res {
+          let mut data_line_end = String::new() ;
+
+          match res {
 
             BenchRes::Success(time, status) => {
               self.update_avg_runtime(tool, time) ;
@@ -520,7 +522,7 @@ impl Master {
               ).chain_err(
                 || format!(
                   "during registration and consistency checking of {} on {}",
-                  self.conf.emph( & self.instance[tool].name ),
+                  self.conf.emph( & self.instance[tool].ident() ),
                   self.conf.emph( self.instance.str_of_bench(bench) )
                 )
               ) {
@@ -528,24 +530,39 @@ impl Master {
                 print_err(& * self.conf, & e, false) ;
                 println!()
               }
-              format!( "{} {}", time.as_sec_str(), status.as_data_str() )
+              data_line_end += ", time = \"" ;
+              data_line_end += & time.as_sec_str() ;
+              data_line_end += "\"" ;
+              if let Some(code) = status.code() {
+                data_line_end += ", code = " ;
+                data_line_end += & format!("{}", code)
+              }
             },
 
             BenchRes::Timeout(status) => {
               self.timeouts += 1 ;
-              format!( "timeout {}", status.as_data_str() )
+              if let Some(code) = status.code() {
+                data_line_end += ", code = " ;
+                data_line_end += & format!("{}", code)
+              }
             },
 
-            BenchRes::Error(status) => {
+            BenchRes::Error(time, status) => {
               self.errors += 1 ;
-              format!( "error {}", status.as_data_str() )
+              data_line_end += ", time = \"" ;
+              data_line_end += & time.as_sec_str() ;
+              data_line_end += "\"" ;
+              if let Some(code) = status.code() {
+                data_line_end += ", code = " ;
+                data_line_end += & format!("{}", code)
+              }
             },
 
             BenchRes::BenchiError(e) => {
               if let Err(e) = (Err(e) as Res<()>).chain_err(
                 || format!(
                   "internal error while running `{}` on `{}`",
-                  self.conf.sad(& self.instance[tool].name),
+                  self.conf.sad(& self.instance[tool].ident()),
                   self.conf.sad( self.instance.str_of_bench(bench) )
                 )
               ) {
@@ -553,18 +570,18 @@ impl Master {
               }
               continue 'recv
             },
-          } ;
+          }
 
           writeln!(
             & mut self.tool_files[tool],
-            "{} \"{}\" {}",
+            "{} = {{ bench = \"{}\"{} }}",
             self.instance.safe_name_for_bench(bench),
             self.instance.str_of_bench(bench),
             data_line_end
           ).chain_err(
             || format!(
               "while writing result of {} running on {}",
-              self.conf.emph( & self.instance[tool].name ),
+              self.conf.emph( & self.instance[tool].ident() ),
               self.conf.emph( self.instance.str_of_bench(bench) )
             )
           ) ?
@@ -591,7 +608,7 @@ impl Master {
   /// Register a tool run on a bench, and checks that all the tools agree on
   /// the exit code, if any.
   fn register_result(
-    & mut self, bench: BenchIndex, tool: ToolIndex, status: ExitStatus
+    & mut self, bench: BenchIndex, tool: ToolIdx, status: ExitStatus
   ) -> Res<()> {
     {
       let instance = self.instance.clone() ; // `Arc` clone, not real clone.
@@ -624,8 +641,8 @@ impl Master {
       if ! disagree.is_empty() {
         let code_str = if let Some(
           vald_conf
-        ) = self.conf.vald_conf().get(code) {
-          & vald_conf.desc
+        ) = self.conf.codes().get(code) {
+          & vald_conf.name
         } else { "<unknown exit code>" } ;
         warn!(
           self.conf =>
@@ -633,21 +650,21 @@ impl Master {
               self.instance.str_of_bench(bench)
             ) ;
             "result for {} validated with {}, but",
-            self.conf.emph( & self.instance[tool].name ),
+            self.conf.emph( & self.instance[tool].ident() ),
             self.conf.sad( code_str ) ;
             {
               for (tool, code) in disagree {
                 let code_str = if let Some(
                   vald_conf
-                ) = self.conf.vald_conf().get(code) {
-                  & vald_conf.desc
+                ) = self.conf.codes().get(code) {
+                  & vald_conf.name
                 } else {
                   "<unknown exit code>"
                 } ;
                 warn!(
                   self.conf, line =>
                     "  result for {} validated with {}",
-                    self.conf.emph( & self.instance[tool].name ),
+                    self.conf.emph( & self.instance[tool].ident() ),
                     self.conf.bad( code_str )
                 )
               }
@@ -662,7 +679,7 @@ impl Master {
   /// Deletes the directories of a tool if they're not empty.
   ///
   /// First tries the error directory, and then the tool's directory.
-  fn cleanup(& self, tool: ToolIndex) {
+  fn cleanup(& self, tool: ToolIdx) {
     let deleted_err_dir = self.try_delete_err_dir(tool) ;
     if deleted_err_dir {
       self.try_delete_dir(tool) ;
@@ -670,7 +687,7 @@ impl Master {
   }
 
   /// Deletes the error directory of some tool if it's empty.
-  fn try_delete_err_dir(& self, tool: ToolIndex) -> bool {
+  fn try_delete_err_dir(& self, tool: ToolIdx) -> bool {
     let path = self.instance.err_path_of_tool(& self.conf, tool) ;
     let empty = path.as_path().read_dir().map(
       |mut rd| rd.next().is_none()
@@ -682,7 +699,7 @@ impl Master {
   }
 
   /// Deletes the directory of some tool if it's empty.
-  fn try_delete_dir(& self, tool: ToolIndex) -> bool {
+  fn try_delete_dir(& self, tool: ToolIdx) -> bool {
     let path = self.instance.path_of_tool(& self.conf, tool) ;
     let empty = path.as_path().read_dir().map(
       |mut rd| rd.next().is_none()
