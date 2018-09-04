@@ -1,0 +1,46 @@
+options = "-v run -o runs/smt -t 30s --benchs 1 --tools 1"
+
+run = [ "hoice", "spacer" ]
+
+[tools]
+
+  [tools.hoice]
+  cmd = "hoice -c off"
+  validator = "my_validator"
+
+  [tools.spacer]
+  cmd = "z3 fixedpoint.engine=spacer"
+  validator = "my_validator"
+
+
+[codes]
+sat = { code = 0, graph = "Sat" }
+unsat = { code = 10, graph = "Unsat" }
+error = { code = 2 }
+timeout = { code = 20 }
+
+
+[validators]
+
+
+my_validator = '''
+if [ `cat $out | grep -e "^(error" | wc -l | tr -d ' '` -ne 0 ] ; then
+  exit $error
+elif [ `cat $out | grep -e "^unknown" | wc -l | tr -d ' '` -ne 0 ] ; then
+  exit $timeout
+elif [ `cat $out | grep -e "^sat" | wc -l | tr -d ' '` -ne 0 ] ; then
+  blah=`timeout 20 hoice --check $out $bench 2>&1`
+  exit_code="$?"
+  if [ $exit_code -eq 0 ] \
+  || [ $exit_code -eq 124 ] \
+  || [ $exit_code -eq 137 ] \
+  || [ `echo $blah | grep -e "^Timeout" | wc -l | tr -d ' '` -ne 0 ] ; then
+    exit $sat
+  fi
+  exit $error
+elif [ `cat $out | grep -e "^unsat" | wc -l | tr -d ' '` -ne 0 ] ; then
+  exit $unsat
+else
+  exit $error
+fi
+'''

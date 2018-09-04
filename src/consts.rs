@@ -1,13 +1,28 @@
 //! Constants.
+
 /// Validator constants.
 pub mod validator {
+  use std::collections::BTreeSet ;
+
+  lazy_static! {
+    /// Reserved names in validators.
+    pub static ref reserved: BTreeSet<& 'static str> = {
+      let mut set = BTreeSet::new() ;
+      set.insert("bench") ;
+      set.insert("code") ;
+      set.insert("out_file") ;
+      set.insert("err_file") ;
+      set
+    } ;
+  }
+
   /// Prefix added to validator scripts.
   pub static pref: & str = "\
 #!/bin/bash
 bench=\"$1\"
 code=\"$2\"
-out=\"$3\"
-err=\"$4\"
+out_file=\"$3\"
+err_file=\"$4\"
 
 \
   " ;

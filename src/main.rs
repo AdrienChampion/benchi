@@ -20,6 +20,7 @@ extern crate serde ;
 #[macro_use]
 extern crate serde_derive ;
 extern crate toml ;
+extern crate wait_timeout ;
 
 pub mod consts ;
 #[macro_use]

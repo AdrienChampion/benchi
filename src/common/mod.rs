@@ -15,11 +15,18 @@ pub use std::sync::Arc ;
 pub use std::collections::HashMap ;
 pub use std::sync::mpsc::{ Sender, Receiver } ;
 
+pub use std::collections::{
+  BTreeMap as Map, BTreeSet as Set
+} ;
+
 pub use pbr::{ ProgressBar, MultiBar } ;
 
 use ansi::{ Style, Colour } ;
 
 use errors::* ;
+
+/// Map from strings to something.
+pub type StrMap<T> = Map<String, T> ;
 
 /// Unimplemented.
 macro_rules! bail_unimpl {

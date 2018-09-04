@@ -5,8 +5,7 @@ use common::* ;
 
 
 
-/// Run configuration. Constructor is private on purpose, it does path
-/// substitution.
+/// Run configuration.
 #[derive(Debug)]
 pub struct RunConf {
   /// Number of parallel bench runs.
@@ -40,21 +39,6 @@ impl ValdConfExt for RunConf {
 }
 
 impl RunConf {
-  /// Creates a configuration.
-  #[inline]
-  pub fn mk(
-    bench_par: usize, tool_par: usize,
-    timeout: Duration, try: Option<usize>, log_stdout: bool,
-    out_dir: String, tool_file: String, bench_file: String,
-    gconf: GConf, vald_conf: ValdConf
-  ) -> Self {
-    RunConf {
-      bench_par, tool_par, timeout, try, log_stdout,
-      out_dir, tool_file, bench_file,
-      gconf, vald_conf
-    }
-  }
-
   /// Name of the validator for some tool.
   #[inline]
   pub fn validator_path_of(& self, tool: & ToolConf) -> Option<PathBuf> {
@@ -290,7 +274,7 @@ pub fn run_clap<'a>(
 
   // Bench file.
   let bench_file = if let Some(f) = matches.value_of("BENCHS") {
-    f
+    f.to_string()
   } else {
     return Some(
       Err(
@@ -300,11 +284,13 @@ pub fn run_clap<'a>(
     )
   } ;
 
-  let run_conf = RunConf::mk(
-    bench_par, tool_par, timeout, try, log_stdout,
-    out_dir, tool_file, bench_file.into(),
-    conf, vald_conf
-  ) ;
+  let run_conf = RunConf {
+    bench_par, tool_par, timeout, try, log_stdout, out_dir,
+    tool_file,
+    bench_file,
+    gconf: conf,
+    vald_conf
+  } ;
 
   Some(
     Ok(

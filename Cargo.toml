@@ -15,6 +15,7 @@ error-chain = "*"
 serde = "*"
 serde_derive = "*"
 toml = "*"
+wait-timeout = "*"
 
 [dependencies.nom]
 version = "^3.0"
