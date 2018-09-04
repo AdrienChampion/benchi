@@ -1,11 +1,10 @@
 //! Common types and functions used by `benchi`.
 
-use std::fmt ;
-use std::ops::{ Index, Deref } ;
+use std::ops::Index ;
 
 
 pub use std::str::FromStr ;
-pub use std::process::{ Command, ExitStatus } ;
+pub use std::process::Command ;
 pub use std::fs::File ;
 pub use std::io::{ Lines, Read, Write, BufRead, BufReader } ;
 pub use std::time::{ Instant, Duration } ;
@@ -18,6 +17,8 @@ pub use std::sync::mpsc::{ Sender, Receiver } ;
 pub use std::collections::{
   BTreeMap as Map, BTreeSet as Set
 } ;
+
+pub use wait_timeout::ExitStatus ;
 
 pub use pbr::{ ProgressBar, MultiBar } ;
 
@@ -105,13 +106,14 @@ macro_rules! warn {
       println!("")
     }
   ) ;
+
   ($conf:expr, line => $($stuff:tt)+) => (
     if ! $conf.quiet() {
       log!{
         |internal| $conf.sad("| ") => $($stuff)+ ;
       }
     }
-  )
+  ) ;
 }
 
 pub mod res ;
@@ -122,6 +124,7 @@ use common::plot::* ;
 pub mod inspect ;
 // use common::inspect::* ;
 
+
 /// Creates a directory if not already there.
 #[inline]
 pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
@@ -129,6 +132,7 @@ pub fn mk_dir<P: AsRef<Path>>(path: P) -> Res<()> {
     |e| e.into()
   )
 }
+
 
 /// Checks that a file exists.
 #[inline]
@@ -165,107 +169,11 @@ pub type Validation = i32 ;
 
 
 
-/// Validation code info.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValdCode {
-  /// Alias.
-  pub alias: String,
-  /// Description.
-  pub desc: String,
-  /// Color (optional).
-  pub color: Option<String>,
-}
-
-
-
-
-/// Validator configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValdConf {
-  /// Success codes.
-  succ: HashMap<Validation, ValdCode>,
-}
-impl ValdConf {
-  /// True if the valdconf is empty.
-  pub fn is_empty(& self) -> bool {
-    self.succ.is_empty()
-  }
-  /// Creates an empty validator configuration.
-  pub fn empty() -> Self {
-    ValdConf { succ: HashMap::new() }
-  }
-  /// Info of an exit code.
-  pub fn get(& self, code: Validation) -> Option<& ValdCode> {
-    self.succ.get(& code)
-  }
-
-  /// Number of validators registered.
-  pub fn len(& self) -> usize { self.succ.len() }
-
-  /// Adds a new success validation code.
-  pub fn add_succ(mut self, code: Validation, info: ValdCode) -> Res<Self> {
-    if let Some( ValdCode { ref desc, .. } ) = self.succ.insert(code, info) {
-      Err(
-        format!(
-          "code `{}` is already registered as success `{}`", code, desc
-        ).into()
-      )
-    } else {
-      Ok(self)
-    }
-  }
-  /// Dumps itself to a writer.
-  pub fn dump<W: Write>(& self, w: & mut W) -> Res<()> {
-    for (code, info) in & self.succ {
-      writeln!(
-        w, "# success: {}, {}, {}", code, info.alias, info.desc
-      ).chain_err(
-        || "while dumping validator information"
-      ) ?
-    }
-    Ok(())
-  }
-}
-
-
-/// Validator configuration extensions.
-pub trait ValdConfExt {
-  /// Accessor.
-  fn vald_conf(& self) -> & ValdConf ;
-
-  /// Checks whether an exit status is a success.
-  ///
-  /// Returns true if no success code is registered and `status.success()`, or
-  /// the status is `Some(code)` and `code` is registered as a success.
-  fn check_succ(& self, status: & ExitStatus) -> bool {
-    let vald_conf = self.vald_conf() ;
-    if vald_conf.succ.is_empty() {
-      status.success()
-    } else if let Some(code) = status.code() {
-      vald_conf.succ.get(& code).is_some()
-    } else {
-      false
-    }
-  }
-
-  /// Iterator over the success codes declared.
-  fn validators_iter(& self) -> ::std::collections::hash_map::Iter<
-    Validation, ValdCode
-  > {
-    self.vald_conf().succ.iter()
-  }
-}
-impl ValdConfExt for ValdConf {
-  fn vald_conf(& self) -> & ValdConf { self }
-}
-
-
-
 
 /// Clap result.
 pub enum Clap {
   /// Run mode.
-  Run(RunConf, NewToolConfs),
+  Run(RunConf, Box<NewToolConfs>),
   /// Plot mode.
   Plot(PlotConf, PlotKind),
   /// Conf mode (explanation). Second parameter is the file to dump the
@@ -476,81 +384,6 @@ impl<T: GConfExt> VerbExt for T {
 
 
 
-
-/// A tool configuration.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ToolConf {
-  /// Tool name.
-  pub name: String,
-  /// Short name.
-  pub short: String,
-  /// Graph name.
-  pub graph: Option<String>,
-  /// Command (lines).
-  pub cmd: String,
-  /// Optional validator.
-  pub validator: Option<String>,
-}
-
-impl ToolConf {
-  /// Graph name of the tool.
-  pub fn graph_name(& self) -> & str {
-    self.graph.as_ref().unwrap_or(& self.name)
-  }
-}
-
-
-unsafe impl Sync for ToolConf {}
-impl ToolConf {
-  /// Dumps info to a writer.
-  pub fn dump_info<W: Write>(
-    & self, conf: & Arc<RunConf>, w: & mut W
-  ) -> Res<()> {
-    use consts::dump::* ;
-
-    writeln!(w, "{} {{", self.name) ? ;
-    writeln!(
-      w, "  {}: {}", short_name_key, self.short
-    ) ? ;
-    writeln!(
-      w, "  {}: {}", graph_name_key, self.graph_name()
-    ) ? ;
-    write!(  w, "  {}: \"", cmd_key) ? ;
-    let mut iter = Some(& self.cmd).into_iter() ;
-    if let Some(s) = iter.next() {
-      write!(w, "{}", s) ? ;
-      for s in iter {
-        write!(w, " {}", s) ?
-      }
-    }
-    writeln!(w, "\"") ? ;
-    // if let Some(path) = conf.validator_path_of(& self) {
-    //   writeln!(w, "  {}: ```", vald_key) ? ;
-    //   let file = ::std::fs::OpenOptions::new().read(true).open(& path) ? ;
-    //   for line in BufReader::new(file).lines() {
-    //     writeln!(w, "{}", line ?) ?
-    //   }
-    //   writeln!(w, "  ```") ? ;
-    // }
-    writeln!(w, "}}") ? ;
-
-    conf.codes().toml_write(w) ? ;
-
-    writeln!(
-      w, "{}: {}", timeout_key, conf.timeout.as_sec_str()
-    ) ? ;
-    writeln!(w, "{}", & * cmt_pref) ? ;
-
-    Ok(())
-  }
-}
-
-
-
-
-
-
-
 wrap_usize! {
   /// Tool index.
   ToolIdx
@@ -573,73 +406,19 @@ wrap_usize! {
 }
 
 
-
-
-
-/// The index of a bench, just a usize.
-#[derive(
-  Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash
-)]
-pub struct BenchIndex {
-  /// The index.
-  n: usize,
-}
-impl BenchIndex {
-  /// Iterator over indices. **Exclusive** upper bound.
-  pub fn iter(max: usize) -> BenchRange {
-    BenchRange { current: 0, max }
-  }
-}
-impl Deref for BenchIndex {
-  type Target = usize ;
-  fn deref(& self) -> & usize { & self.n }
-}
-impl From<usize> for BenchIndex {
-  fn from(n: usize) -> BenchIndex {
-    BenchIndex { n }
-  }
-}
-impl fmt::Display for BenchIndex {
-  fn fmt(& self, fmt: & mut fmt::Formatter) -> fmt::Result {
-    write!(fmt, "{}", self.n)
-  }
-}
-
-/// A range of bench indices.
-///
-/// Can only be created by an `Instance`.
-pub struct BenchRange {
-  /// Cursor.
-  current: usize,
-  /// Exclusive upper-bound.
-  max: usize
-}
-impl Iterator for BenchRange {
-  type Item = BenchIndex ;
-  #[inline]
-  fn next(& mut self) -> Option<BenchIndex> {
-    if self.current >= self.max { None } else {
-      let res = BenchIndex { n: self.current } ;
-      self.current += 1 ;
-      Some(res)
-    }
-  }
-}
-
-
 /// Store the tools and the path to the benchmarks. Should **always** be
 /// immutable.
 pub struct Instance {
   /// The tools.
   tools: NewToolConfs,
   /// The benchmarks.
-  benchs: Vec<String>,
+  benchs: BenchMap<String>,
 }
 unsafe impl Sync for Instance {}
 impl Instance {
   /// Creates an instance.
   #[inline]
-  pub fn mk(tools: NewToolConfs, benchs: Vec<String>) -> Self {
+  pub fn new(tools: NewToolConfs, benchs: BenchMap<String>) -> Self {
     Instance { tools, benchs }
   }
   /// Iterator over the tool indices of the instance.
@@ -649,8 +428,8 @@ impl Instance {
   }
   /// Iterator over the bench indices of the instance.
   #[inline]
-  pub fn benchs(& self) -> BenchRange {
-    BenchRange { current: 0, max: self.benchs.len() }
+  pub fn benchs(& self) -> BenchRng {
+    BenchRng::zero_to( self.benchs.len() )
   }
   /// Number of tools.
   #[inline]
@@ -664,13 +443,13 @@ impl Instance {
   }
   /// String of a bench.
   #[inline]
-  pub fn str_of_bench(& self, index: BenchIndex) -> & str {
-    & self.benchs[* index]
+  pub fn str_of_bench(& self, index: BenchIdx) -> & str {
+    & self.benchs[index]
   }
   /// Safe name for a bench, unique and can be used as file id.
   #[inline]
-  pub fn safe_name_for_bench(& self, index: BenchIndex) -> String {
-    format!("{:0>1$}", * index, format!("{}", self.benchs.len()).len())
+  pub fn safe_name_for_bench(& self, index: BenchIdx) -> String {
+    format!("{:0>1$}", index, format!("{}", self.benchs.len()).len())
   }
 
   /// Path to the directory of a tool.
@@ -705,7 +484,7 @@ impl Instance {
   /// Path to the stderr of a tool on a bench.
   #[inline]
   pub fn err_path_of(
-    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIdx
   ) -> PathBuf {
     let mut path = self.err_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -715,7 +494,7 @@ impl Instance {
   /// Path to the stdout of a tool on a bench.
   #[inline]
   pub fn out_path_of(
-    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIndex
+    & self, conf: & Arc<RunConf>, tool: ToolIdx, bench: BenchIdx
   ) -> PathBuf {
     let mut path = self.out_path_of_tool(conf, tool) ;
     path.push( self.safe_name_for_bench(bench) ) ;
@@ -857,15 +636,17 @@ impl Instance {
 
   /// Checks if a bench index is the last one.
   #[inline]
-  pub fn is_last_bench(& self, bench: BenchIndex) -> bool {
+  pub fn is_last_bench(& self, bench: BenchIdx) -> bool {
     * bench + 1 >= self.benchs.len()
   }
 
   /// If any, runs the validator for a tool on some benchmark.
   pub fn validate(
     & self, conf: & Arc<RunConf>,
-    tool: ToolIdx, bench: BenchIndex, status: ExitStatus
+    tool: ToolIdx, bench: BenchIdx, status: ExitStatus
   ) -> Res< Option<ExitStatus> > {
+    use wait_timeout::ChildExt ;
+
     if let Some(path) = conf.validator_path_of( & self[tool] ) {
       use std::process::Stdio ;
       let status = if let Some(code) = status.code() {
@@ -875,7 +656,7 @@ impl Instance {
       } ;
       let out_path = self.out_path_of(conf, tool, bench) ;
       let err_path = self.err_path_of(conf, tool, bench) ;
-      Command::new(
+      let mut kid = Command::new(
         path.as_os_str()
       ).stdin(
         Stdio::null()
@@ -883,23 +664,29 @@ impl Instance {
         & self[bench]
       ).arg(
         & format!("{}", status)
-      ).arg(out_path).arg(err_path).status().chain_err(
+      ).arg(out_path).arg(err_path).spawn().chain_err(
         || format!(
           "while running validator for `{}` on benchmark `{}`",
           conf.sad(& self[tool].ident()), conf.sad(format!("{}", bench))
         )
-      ).map(Some)
+      ) ? ;
+      let res = kid.wait_timeout(conf.timeout) ? ;
+      if res.is_none() {
+        kid.kill() ? ;
+      }
+
+      Ok(res)
     } else {
       Ok( None )
     }
   }
 }
 
-impl Index<BenchIndex> for Instance {
+impl Index<BenchIdx> for Instance {
   type Output = String ;
   #[inline]
-  fn index(& self, index: BenchIndex) -> & String {
-    & self.benchs[* index]
+  fn index(& self, index: BenchIdx) -> & String {
+    & self.benchs[index]
   }
 }
 

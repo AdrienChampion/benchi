@@ -60,7 +60,7 @@ fn main() {
         "Loading instance..."
       }
 
-      let instance = match load_instance(& mut conf, tools) {
+      let instance = match load_instance(& mut conf, * tools) {
         Ok(instance) => instance,
         Err(e) => {
           print_err(& conf, & e, true) ;
@@ -108,7 +108,7 @@ fn load_instance(conf: & mut RunConf, tools: NewToolConfs) -> Res<Instance> {
         || "while opening benchmark listing file"
       )
     ) ;
-    let mut benchs = Vec::with_capacity( 200 ) ;
+    let mut benchs = BenchMap::with_capacity( 200 ) ;
 
     for maybe_line in buff_read.lines() {
       benchs.push( try!(maybe_line) )
@@ -118,14 +118,14 @@ fn load_instance(conf: & mut RunConf, tools: NewToolConfs) -> Res<Instance> {
   } ;
 
   if let Some(max) = conf.try {
-    benchs.truncate(max)
+    benchs = benchs.into_iter().take(max).collect()
   }
 
   // let tools = tools.into_iter().map(
   //   |tool| tool.to_tool_conf()
   // ).collect() ;
 
-  let instance = Instance::mk(tools, benchs) ;
+  let instance = Instance::new(tools, benchs) ;
 
   if instance.tool_len() < conf.tool_par {
     conf.tool_par = instance.tool_len()

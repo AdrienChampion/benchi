@@ -50,15 +50,6 @@ impl RunConf {
     path.set_extension("sh") ;
     Some(path)
   }
-
-  /// Relative path of the validator of a tool.
-  pub fn rel_validator_path_of(tool: & ToolConf) -> Option<String> {
-    if tool.validator.is_some() {
-      Some( format!("{}/validator.sh", tool.short) )
-    } else {
-      None
-    }
-  }
 }
 
 
@@ -314,6 +305,6 @@ pub fn run_clap<'a>(
   } ;
 
   Some(
-    Ok( Clap::Run(run_conf, tools) )
+    Ok( Clap::Run(run_conf, Box::new(tools)) )
   )
 }

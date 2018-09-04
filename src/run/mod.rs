@@ -30,7 +30,7 @@ pub struct ToolRun {
   /// Sender to bench run.
   bench_run: Sender< usize >,
   /// Receiver from bench run.
-  from_bench_run: Receiver< (ToolIdx, BenchIndex) >
+  from_bench_run: Receiver< (ToolIdx, BenchIdx) >
 }
 unsafe impl Send for ToolRun {}
 impl ToolRun {
@@ -40,7 +40,7 @@ impl ToolRun {
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender<RunRes>,
     bench_run: Sender< usize >,
-    from_bench_run: Receiver< (ToolIdx, BenchIndex) >,
+    from_bench_run: Receiver< (ToolIdx, BenchIdx) >,
   ) -> Self {
     ToolRun {
       conf, instance, index, master, bench_run, from_bench_run
@@ -93,19 +93,31 @@ impl ToolRun {
 
   /// Runs a tool on a bench.
   fn run(
-    & self, tool_idx: ToolIdx, bench_idx: BenchIndex
+    & self, tool_idx: ToolIdx, bench_idx: BenchIdx
   ) -> Res<BenchRes> {
     let bench = & self.instance[bench_idx] ;
     let kid_cmd = & self.instance[tool_idx].cmd() ;
 
     assert!( ! kid_cmd.is_empty() ) ;
 
-    let mut cmd = Command::new("timeout") ;
-    cmd.arg(& format!("{}", self.conf.timeout.as_secs())).arg(& kid_cmd) ;
+    let mut kid_cmd_iter = kid_cmd.split_whitespace() ;
+    let fst = if let Some(fst) = kid_cmd_iter.next() {
+      fst
+    } else {
+      bail!(
+        "illegal command for tool {}", self.instance[tool_idx].ident()
+      )
+    } ;
+
+    let mut cmd = Command::new(fst) ;
+    cmd.args(kid_cmd_iter) ;
+
     let mut cmd_str = kid_cmd.to_string() ;
+
     cmd.arg(bench) ;
-    cmd_str.push(' ') ;
-    cmd_str.push_str(bench) ;
+    cmd_str += " " ;
+    cmd_str += bench ;
+
     let (stdout_file, stderr_file) = (
       if self.conf.log_stdout {
         Some( self.open_stdout_file_for(tool_idx, bench_idx)? )
@@ -122,14 +134,27 @@ impl ToolRun {
       ) ?, Instant::now()
     ) ;
 
-    let status = kid.wait().chain_err(
+    use wait_timeout::ChildExt ;
+
+    let mut status = kid.wait_timeout( self.conf.timeout ).chain_err(
       || format!("while waiting for `{}`", cmd_str)
     ) ? ;
     let time = Instant::now() - start ;
+    let mut timeout = time >= self.conf.timeout ;
 
-    if time >= self.conf.timeout
-    || Some(124) == status.code()
-    || Some(137) == status.code() {
+    let (status, timeout) = {
+      loop {
+        if let Some(status) = status {
+          break (status, timeout)
+        }
+
+        kid.kill() ? ;
+        status = kid.wait_timeout( Duration::from_millis(10) ) ? ;
+        timeout = true
+      }
+    } ;
+
+    if timeout {
       Ok( BenchRes::Timeout(status) )
     } else {
       let status = if let Some(vald_status) = self.instance.validate(
@@ -150,7 +175,7 @@ impl ToolRun {
 
   /// Opens the stderr file for a bench for a tool.
   fn open_stderr_file_for(
-    & self, tool: ToolIdx, bench: BenchIndex
+    & self, tool: ToolIdx, bench: BenchIdx
   ) -> Res<File> {
     let path = self.instance.err_path_of(& self.conf, tool, bench) ;
     self.conf.open_file_writer(path).chain_err(
@@ -164,7 +189,7 @@ impl ToolRun {
   }
   /// Opens the stdout file for a bench for a tool.
   fn open_stdout_file_for(
-    & self, tool: ToolIdx, bench: BenchIndex
+    & self, tool: ToolIdx, bench: BenchIdx
   ) -> Res<File> {
     let path = self.instance.out_path_of(& self.conf, tool, bench) ;
     self.conf.open_file_writer(& path).chain_err(
@@ -195,9 +220,9 @@ pub struct BenchRun {
   /// Sender to master.
   master: Sender< Res<usize> >,
   /// Receiver from master.
-  from_master: Receiver< BenchIndex >,
+  from_master: Receiver< BenchIdx >,
   /// Senders to tool runs.
-  tool_runs: Vec< Sender< (ToolIdx, BenchIndex) > >,
+  tool_runs: Vec< Sender< (ToolIdx, BenchIdx) > >,
   /// Receiver from tool runs.
   from_tool_runs: Receiver< usize >
 }
@@ -209,7 +234,7 @@ impl BenchRun {
   fn mk(
     conf: Arc<RunConf>, instance: Arc<Instance>, index: usize,
     master: Sender< Res<usize> >,
-    from_master: Receiver< BenchIndex >,
+    from_master: Receiver< BenchIdx >,
     tool_to_master: & Sender<RunRes>,
   ) -> Self {
     let mut tool_runs = Vec::with_capacity( conf.tool_par ) ;
@@ -271,7 +296,7 @@ impl BenchRun {
 
   /// Dispatches all the tools on a bench.
   pub fn run(
-    & mut self, bench: BenchIndex
+    & mut self, bench: BenchIdx
   ) -> Res<()> {
     'dispatch_tool: for tool in self.instance.tools() {
 
@@ -311,7 +336,7 @@ pub struct Master {
   /// The instance.
   pub instance: Arc<Instance>,
   /// Senders to bench runs (intermediary level).
-  bench_runs: Vec< Sender<BenchIndex> >,
+  bench_runs: Vec< Sender<BenchIdx> >,
   /// Receiver from bench runs (intermediary level).
   from_bench_runs: Receiver< Res<usize> >,
   /// Receiver from tool runs (lowest level).
@@ -330,7 +355,7 @@ pub struct Master {
   pub avg_runtime: ToolMap<(Duration, u32)>,
   /// Stores the exit status for each tool on the current benchmark. `None` if
   /// timeout or error.
-  pub codes: HashMap< BenchIndex, ToolMap< Option<i32> > >,
+  pub codes: HashMap< BenchIdx, ToolMap< Option<i32> > >,
   /// Number of inconsistent results obtained.
   pub inconsistencies: usize
 }
@@ -608,7 +633,7 @@ impl Master {
   /// Register a tool run on a bench, and checks that all the tools agree on
   /// the exit code, if any.
   fn register_result(
-    & mut self, bench: BenchIndex, tool: ToolIdx, status: ExitStatus
+    & mut self, bench: BenchIdx, tool: ToolIdx, status: ExitStatus
   ) -> Res<()> {
     {
       let instance = self.instance.clone() ; // `Arc` clone, not real clone.

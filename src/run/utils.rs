@@ -6,7 +6,7 @@
 use common::* ;
 
 pub use std::thread::{ spawn, sleep, JoinHandle } ;
-pub use std::process::{ Child, Command, Stdio, ExitStatus } ;
+pub use std::process::{ Child, Stdio } ;
 pub use std::sync::mpsc::{
   channel, RecvError, TryRecvError
 } ;
@@ -30,14 +30,14 @@ pub fn set_pipes(
 
 /// Channel from master to bench runs.
 pub fn master_to_bench_channel() -> (
-  Sender< BenchIndex >, Receiver< BenchIndex >
+  Sender< BenchIdx >, Receiver< BenchIdx >
 ) {
   channel()
 }
 
 /// Channel from bench runs to tool runs.
 pub fn bench_to_tool_channel() -> (
-  Sender< (ToolIdx, BenchIndex) >, Receiver< (ToolIdx, BenchIndex) >
+  Sender< (ToolIdx, BenchIdx) >, Receiver< (ToolIdx, BenchIdx) >
 ) {
   channel()
 }
@@ -61,7 +61,7 @@ pub struct RunRes {
   /// Tool index.
   pub tool: ToolIdx,
   /// Bench index.
-  pub bench: BenchIndex,
+  pub bench: BenchIdx,
   /// Result.
   pub res: BenchRes,
 }

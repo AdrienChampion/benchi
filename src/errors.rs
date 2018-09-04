@@ -25,18 +25,6 @@ error_chain!{
         }
       )
     }
-    #[doc = "Tool run error."]
-    ToolRun(
-      conf: Box<GConf>,
-      tool: Box<ToolConf>,
-      bench: String
-    ) {
-      description("error during tool run")
-      display(
-        "failure while running '{}' on '{}'",
-        conf.sad(& tool.name), conf.emph(& bench)
-      )
-    }
   }
 }
 
