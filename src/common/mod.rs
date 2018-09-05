@@ -33,45 +33,42 @@ macro_rules! bail_unimpl {
 }
 
 /// Log macro.
+#[macro_export]
 macro_rules! log {
 
-  ( | internal | $pref:expr => ) => (()) ;
+    ( | internal | $pref:expr => ) => (()) ;
 
-  ( | internal | $pref:expr => ; $($tail:tt)* ) => (
-    log!(| internal | $pref => $($tail)*)
-  ) ;
+    ( | internal | $pref:expr => ; $($tail:tt)* ) => (
+        log!(| internal | $pref => $($tail)*)
+    ) ;
 
-  ( | internal | $pref:expr => let $p:pat = $e:expr ; $($tail:tt)* ) => ({
-    let $p = $e ;
-    log!(| internal | $pref => $($tail)*)
-  }) ;
+    ( | internal | $pref:expr => let $p:pat = $e:expr ; $($tail:tt)* ) => ({
+        let $p = $e ;
+        log!(| internal | $pref => $($tail)*)
+    }) ;
 
-  ( | internal | $pref:expr => { $($head:tt)+ } $($tail:tt)* ) => ({
-    { $($head)+ }
-    log!(| internal | $pref => $($tail)*)
-  }) ;
+    ( | internal | $pref:expr => { $($head:tt)+ } $($tail:tt)* ) => ({
+        { $($head)+ }
+        log!(| internal | $pref => $($tail)*)
+    }) ;
 
-  ( | internal | $pref:expr => $($head:expr),* ; $($tail:tt)* ) => ({
-    print!("{}", $pref) ;
-    println!($($head),*) ;
-    log!(| internal | $pref => $($tail)*)
-  }) ;
+    ( | internal | $pref:expr => $($head:expr),* ; $($tail:tt)* ) => ({
+        print!("{}", $pref) ;
+        println!($($head),*) ;
+        log!(| internal | $pref => $($tail)*)
+    }) ;
 
-  (
-    $conf:expr => $($stuff:tt)+
-  ) => ({
-    if ! $conf.quiet() {
-      log!( |internal| "" => $($stuff)+ ; )
-    }
-  }) ;
+    ( $conf:expr => $($stuff:tt)+ ) => ({
+        if ! $conf.quiet() {
+            log!( |internal| "" => $($stuff)+ ; )
+        }
+    }) ;
 
-  (
-    $conf:expr , verb => $($stuff:tt)+
-  ) => ({
-    if $conf.verbose() {
-      log!( |internal| "" => $($stuff)+ ; )
-    }
-  }) ;
+    ( $conf:expr , verb => $($stuff:tt)+ ) => ({
+        if $conf.verbose() {
+            log!( |internal| "" => $($stuff)+ ; )
+        }
+    }) ;
 }
 
 /// Warning macro.
@@ -417,10 +414,24 @@ impl Instance {
     pub fn str_of_bench(&self, index: BenchIdx) -> &str {
         &self.benchs[index]
     }
+
     /// Safe name for a bench, unique and can be used as file id.
+    ///
+    /// ```rust
+    /// # use benchi::common::{ Instance, NewToolConfs, BenchMap } ;
+    /// let benchs: BenchMap<_> = vec![ "unused".to_string() ; 150 ].into() ;
+    /// let tools = NewToolConfs::new() ;
+    /// let instance = Instance::new(tools, benchs) ;
+    /// assert_eq! { & instance.safe_name_for_bench(23.into()), "023" }
+    ///
+    /// let benchs: BenchMap<_> = vec![ "unused".to_string() ; 1500 ].into() ;
+    /// let tools = NewToolConfs::new() ;
+    /// let instance = Instance::new(tools, benchs) ;
+    /// assert_eq! { & instance.safe_name_for_bench(23.into()), "0023" }
+    /// ```
     #[inline]
     pub fn safe_name_for_bench(&self, index: BenchIdx) -> String {
-        format!("{:0>1$}", index, format!("{}", self.benchs.len()).len())
+        format!("{:0>1$}", *index, format!("{}", self.benchs.len()).len())
     }
 
     /// Path to the directory of a tool.

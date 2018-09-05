@@ -100,7 +100,7 @@ impl ::std::ops::Deref for NewToolConfs {
 
 impl NewToolConfs {
     /// Constructor.
-    fn new() -> Self {
+    pub fn new() -> Self {
         NewToolConfs {
             tools: ToolMap::new(),
         }

@@ -2,6 +2,22 @@
 name = "benchi"
 version = "0.2.0"
 authors = ["Adrien Champion <adrien.champion@email.com>"]
+description = "A careful benchmarking tool for research-paper-ready plots."
+homepage = "https://github.com/AdrienChampion/benchi"
+repository = "https://github.com/AdrienChampion/benchi"
+readme = "README.md"
+categories = ["science"]
+keywords = ["benchmarking", "plotting"]
+license = "MIT"
+
+[[bin]]
+name = "benchi"
+path = "src/main.rs"
+doc = false
+
+[lib]
+name = "benchi"
+path = "src/lib.rs"
 
 [dependencies]
 lazy_static = "*"

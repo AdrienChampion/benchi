@@ -3,58 +3,31 @@
 #![forbid(missing_docs)]
 #![allow(non_upper_case_globals)]
 
-extern crate chrono;
 #[macro_use]
-extern crate clap as clap_lib;
-extern crate ansi_term as ansi;
-extern crate pbr;
-extern crate regex;
-#[macro_use]
-extern crate error_chain;
-#[macro_use]
-extern crate lazy_static;
-extern crate rayon;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate toml;
-extern crate wait_timeout;
-#[macro_use]
-extern crate mylib;
+extern crate benchi;
 
-pub mod consts;
-pub mod errors;
-#[macro_use]
-pub mod common;
-pub mod clap;
-// pub mod parse ;
-pub mod inspect;
-pub mod load;
-pub mod plot;
-pub mod run;
-
-use common::run::*;
-use common::*;
+use benchi::common::run::*;
+use benchi::common::*;
 
 /// Entry point.
 fn main() {
-    match clap::work() {
+    match ::benchi::clap::work() {
         Ok(Clap::Run(mut conf, tools)) => {
             log!{ conf, verb =>
-              "{}:", conf.emph("Configuration") ;
-              "           timeout: {}s", conf.timeout.as_secs() ;
-              "           out dir: {}", conf.happy(& conf.out_dir) ;
-              "      benchs in //: {}", conf.bench_par ;
-              "       tools in //: {}", conf.tool_par ;
-              "  max threads used: {}",
-              conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
-              {
-                if let Some(max) = conf.try {
-                  log!{ conf, verb => "               try: {}", max }
+                "{}:", conf.emph("Configuration") ;
+                "           timeout: {}s", conf.timeout.as_secs() ;
+                "           out dir: {}", conf.happy(& conf.out_dir) ;
+                "      benchs in //: {}", conf.bench_par ;
+                "       tools in //: {}", conf.tool_par ;
+                "  max threads used: {}",
+                conf.emph(& format!("{}", conf.bench_par * conf.tool_par)) ;
+                {
+                    if let Some(max) = conf.try {
+                        log!{ conf, verb => "               try: {}", max }
+                    }
                 }
-              }
-              "" ;
-              "Loading instance..."
+                "" ;
+                "Loading instance..."
             }
 
             let instance = match load_instance(&mut conf, *tools) {
@@ -65,9 +38,7 @@ fn main() {
                 }
             };
 
-            log!{
-              conf, verb => "done"
-            }
+            log! { conf, verb => "done" }
 
             let (conf, instance) = (Arc::new(conf), Arc::new(instance));
 
@@ -77,13 +48,13 @@ fn main() {
         }
 
         Ok(Clap::Plot(conf, kind)) => {
-            if let Err(e) = plot::work(&conf, kind) {
+            if let Err(e) = ::benchi::plot::work(&conf, kind) {
                 print_err(&conf, &e, true)
             }
         }
 
         Ok(Clap::Conf(conf, file)) => {
-            if let Err(e) = common::example_conf_file(&conf, &file) {
+            if let Err(e) = example_conf_file(&conf, &file) {
                 print_err(&conf, &e, true)
             }
         }
@@ -135,12 +106,14 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
     }
 
     // Create output directory if it doesn't already exist.
-    try!(mk_dir(&conf.out_dir).chain_err(|| format!(
-        "while creating output directory `{}`",
-        conf.emph(&conf.out_dir)
-    )));
+    mk_dir(&conf.out_dir).chain_err(|| {
+        format!(
+            "while creating output directory `{}`",
+            conf.emph(&conf.out_dir)
+        )
+    })?;
 
-    let mut master = try!(run::Master::mk(conf.clone(), instance.clone()));
+    let mut master = ::benchi::run::Master::mk(conf.clone(), instance.clone())?;
 
     log! { conf =>
         { log!( conf, verb => "" ) }
@@ -148,7 +121,7 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
         instance.tool_len(), instance.bench_len()
     }
 
-    let time = try!(master.run());
+    let time = master.run()?;
 
     log! { conf =>
         let time = format!(

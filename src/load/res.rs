@@ -152,29 +152,29 @@ impl LRes {
 
             assert! { prev.is_none() }
 
-            if let Some(prev) = run_res.benchs.get(&index) {
-                if prev != &bench {
-                    let mut blah = String::new();
-                    let mut other_tools = run_res.tools.iter();
+            let prev = run_res.benchs.entry(index).or_insert_with(|| bench.clone());
 
-                    if let Some(other_tool) = other_tools.next() {
-                        blah += other_tool.tool.ident();
-                        for other in other_tools {
-                            blah += ", ";
-                            blah += other.tool.ident()
-                        }
+            if prev != &bench {
+                let mut blah = String::new();
+                let mut other_tools = run_res.tools.iter();
+
+                if let Some(other_tool) = other_tools.next() {
+                    blah += other_tool.tool.ident();
+                    for other in other_tools {
+                        blah += ", ";
+                        blah += other.tool.ident()
                     }
-
-                    bail!(
-                        "disagreement on bench #{}: tool {} calls it {}\n\
-                         but tool(s) {} call it {}",
-                        gconf.bad(&format!("{}", index)),
-                        gconf.bad(tool.ident()),
-                        gconf.bad(&bench),
-                        blah,
-                        gconf.sad(prev)
-                    )
                 }
+
+                bail!(
+                    "disagreement on bench #{}: tool {} calls it {}\n\
+                     but tool(s) {} call it {}",
+                    gconf.bad(&format!("{}", index)),
+                    gconf.bad(tool.ident()),
+                    gconf.bad(&bench),
+                    blah,
+                    gconf.sad(prev)
+                )
             }
         }
 
