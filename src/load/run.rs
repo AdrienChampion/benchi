@@ -10,19 +10,28 @@ use super::{
 
 
 /// Loads a toml run configuration file.
-pub fn toml<P>(gconf: & GConf, file: P) -> Res<NewRunConf>
-where P: AsRef<Path> {
-  let file = file.as_ref() ;
+///
+/// Returns
+///
+/// - the options declared in the file, if any
+/// - the **active** tool configuration parsed
+/// - the exit codes parsed
+pub fn toml<P>(gconf: & GConf, file: P) -> Res<
+    (Option<String>, NewToolConfs, NewCodes)
+> where P: AsRef<Path> {
+    let file = file.as_ref() ;
 
-  let mut txt = String::new() ;
-  File::open(file)?.read_to_string(& mut txt) ? ;
+    let mut txt = String::new() ;
+    File::open(file)?.read_to_string(& mut txt) ? ;
 
-  let conf = match ::toml::from_str::<LRunConf>(& txt) {
-    Ok(res) => res,
-    Err(e) => bail!( serde_error(gconf, & e, & txt) ),
-  } ;
+    let conf = match ::toml::from_str::<LRunConf>(& txt) {
+        Ok(res) => res,
+        Err(e) => bail!( serde_error(gconf, & e, & txt) ),
+    } ;
 
-  conf.finalize(gconf)
+    conf.finalize(gconf).map(
+        |res| res.destroy()
+    )
 }
 
 /// A run configuration.
@@ -367,7 +376,7 @@ pub fn new_codes(gconf: & GConf, map: StrMap<LCode>) -> Res<NewCodes> {
 
 impl LRunConf {
     /// Checks and finalizes an `LRunConf`.
-    pub fn finalize(mut self, gconf: & GConf) -> Res<NewRunConf> {
+    fn finalize(mut self, gconf: & GConf) -> Res<NewRunConf> {
         let options = self.options ;
 
         // This will only store active tools.

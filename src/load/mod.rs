@@ -14,13 +14,16 @@ pub use self::res::NewBenchRes ;
 
 
 /// Run configuration loader.
+///
+/// Returns
+///
+/// - the options declared in the file, if any
+/// - the **active** tool configuration parsed
+/// - the exit codes parsed
 pub fn run<P>(gconf: & GConf, file: P) -> Res<(
     Option<String>, NewToolConfs, NewCodes
-)>
-where P: AsRef<Path> {
-    run::toml(gconf, file).map(
-        |res| res.destroy()
-    )
+)> where P: AsRef<Path> {
+    run::toml(gconf, file)
 }
 
 
