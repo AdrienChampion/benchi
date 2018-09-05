@@ -9,6 +9,8 @@ pub fn work(conf: &PlotConf, files: Vec<String>) -> Res<Option<String>> {
     log!{ conf => "  loading tool data..." }
     let mut run_res = RunRes::of_files(conf, files)?;
 
+    check(conf, &run_res);
+
     if conf.no_errors {
         let dropped = run_res.rm_errs();
         log!{
@@ -197,4 +199,92 @@ set style line 16 dt 1 lw 1 ps 0.5 pi {0} lc rgb \"0x606060\"
     ",
         bench_count / 20
     )
+}
+
+/// Checks that all tool agree on their exit code on all benchmarks.
+///
+/// Issues warning if it's not the case.
+fn check(conf: &PlotConf, run_res: &RunRes) {
+    let RunRes { tools, benchs } = run_res;
+
+    let mut codes = None;
+
+    {
+        let mut tools = tools.iter();
+        let mut disagree: Option<(&str, Vec<&str>)> = None;
+
+        if let Some(tool) = tools.next() {
+            codes = Some(&tool.codes);
+            for other in tools {
+                if tool.codes != other.codes {
+                    disagree
+                        .get_or_insert_with(|| (tool.tool.ident(), vec![]))
+                        .1
+                        .push(other.tool.ident())
+                }
+            }
+        }
+
+        if let Some((tool, others)) = disagree {
+            let mut tail = format!("{}", conf.bad(tool));
+            for other in others {
+                tail += ", ";
+                tail += &conf.bad(other)
+            }
+
+            warn! { conf =>
+                "some tools disagree on their validators: {}", tail
+            }
+
+            return;
+        }
+    }
+
+    let codes = if let Some(codes) = codes {
+        codes
+    } else {
+        return;
+    };
+
+    for (index, bench) in benchs {
+        let mut code = None;
+        let mut disagree = vec![];
+
+        for tool in tools {
+            if let Some(c) = tool.benchs.get(index).and_then(|res| res.code()) {
+                if code.get_or_insert((c, tool.tool.ident())).0 != c {
+                    disagree.push((c, tool.tool.ident()))
+                }
+            }
+        }
+
+        if let Some((code, tool)) = code {
+            if !disagree.is_empty() {
+                let mut blah = format!(
+                    "{} returned {} ({})",
+                    conf.emph(tool),
+                    conf.bad(&format!("{}", code)),
+                    codes
+                        .get(code)
+                        .map(|info| info.graph.clone())
+                        .unwrap_or("?".to_string())
+                );
+                for (code, tool) in disagree {
+                    blah += &format!(
+                        ", {} returned {} ({})",
+                        conf.emph(tool),
+                        conf.bad(&format!("{}", code)),
+                        codes
+                            .get(code)
+                            .map(|info| info.graph.clone())
+                            .unwrap_or("?".to_string())
+                    );
+                }
+                warn! { conf =>
+                    "some tools disagree on benchmark #{} \"{}\"", index, conf.sad(bench) ;
+                    "{}", blah
+                }
+            }
+        }
+    }
 }
