@@ -21,6 +21,7 @@ extern crate toml;
 extern crate wait_timeout;
 #[macro_use]
 extern crate mylib;
+extern crate isatty;
 
 pub mod consts;
 pub mod errors;

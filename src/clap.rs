@@ -207,9 +207,12 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("colored")
                 .short("-c")
                 .long("--color")
-                .help("Colored output")
-                .default_value("on")
-                .takes_value(
+                .help("(De)activates colored output (inactive when not in a tty)")
+                .default_value(if ::isatty::stdout_isatty() {
+                    "on"
+                } else {
+                    "off"
+                }).takes_value(
                     true, // ).number_of_values(
                           // 1
                 ).validator(|s| bool_validator(&s))

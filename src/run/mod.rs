@@ -143,10 +143,9 @@ impl ToolRun {
                 if let Some(status) = status {
                     break (status, timeout);
                 }
-
+                timeout = true;
                 kid.kill()?;
-                status = kid.wait_timeout(Duration::from_millis(10))?;
-                timeout = true
+                status = kid.wait_timeout(Duration::from_millis(10))?
             }
         };
 

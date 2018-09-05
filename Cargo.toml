@@ -1,6 +1,6 @@
 [package]
 name = "benchi"
-version = "0.2.0"
+version = "0.9.0"
 authors = ["Adrien Champion <adrien.champion@email.com>"]
 description = "A careful benchmarking tool for research-paper-ready plots."
 homepage = "https://github.com/AdrienChampion/benchi"
@@ -32,4 +32,5 @@ serde = "*"
 serde_derive = "*"
 toml = "*"
 wait-timeout = "*"
+isatty = "*"
 mylib = { git = "https://github.com/AdrienChampion/mylib" }
