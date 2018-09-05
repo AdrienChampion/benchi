@@ -8,31 +8,24 @@ use common::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BenchRes {
     /// Success with a time and an optional validation code.
-    Success(Duration, Option<Validation>),
+    Success(Duration, Code),
     /// Timeout.
     Timeout,
     /// Error.
-    Error,
+    Error(Duration),
 }
 impl BenchRes {
-    /// Sets the validation code.
-    pub fn set_code(&mut self, code: Validation) {
-        if let BenchRes::Success(_, ref mut opt) = *self {
-            *opt = Some(code)
-        }
-    }
-
     /// Returns the code of a result.
-    pub fn code(&self) -> Option<Validation> {
-        self.map(|_, res| res, || None, || None)
+    pub fn code(&self) -> Option<Code> {
+        self.map(|_, res| Some(res), || None, |_| None)
     }
 
     /// Map over the different types of data.
     pub fn map<
         T,
-        FSucc: FnOnce(Duration, Option<Validation>) -> T,
+        FSucc: FnOnce(Duration, Code) -> T,
         FTmo: FnOnce() -> T,
-        FErr: FnOnce() -> T,
+        FErr: FnOnce(Duration) -> T,
     >(
         &self,
         f_succ: FSucc,
@@ -42,35 +35,32 @@ impl BenchRes {
         match *self {
             BenchRes::Success(time, vald) => f_succ(time, vald),
             BenchRes::Timeout => f_tmo(),
-            BenchRes::Error => f_err(),
+            BenchRes::Error(time) => f_err(time),
         }
     }
 
     /// True if `self` is an error.
-    pub fn is_err(&self) -> bool {
-        *self == BenchRes::Error
+    pub fn is_err(self) -> bool {
+        self.map(|_, _| false, || false, |_| true)
     }
     /// True if `self` is a timeout.
     pub fn is_tmo(&self) -> bool {
-        match *self {
-            BenchRes::Timeout => true,
-            _ => false,
-        }
+        self.map(|_, _| false, || true, |_| false)
     }
 }
 
 /// Stores the results for a tool on some benchmarks.
 pub struct ToolRes {
     /// Tool configuration.
-    pub tool: NewToolConf,
+    pub tool: ToolInfo,
     /// Timeout.
     pub timeout: Duration,
     /// Data file.
     pub file: String,
     /// Bench results.
-    pub benchs: BenchHMap<NewBenchRes>,
+    pub benchs: BenchHMap<BenchRes>,
     /// Exit codes.
-    pub codes: NewCodes,
+    pub codes: CodeInfos,
     /// Number of successes.
     pub suc_count: usize,
     /// Number of errors.
@@ -79,25 +69,25 @@ pub struct ToolRes {
     pub tmo_count: usize,
 }
 impl CodesExt for ToolRes {
-    fn codes(&self) -> &NewCodes {
+    fn codes(&self) -> &CodeInfos {
         &self.codes
     }
 }
 impl ToolRes {
     /// Constructor.
     fn new(
-        tool: NewToolConf,
+        tool: ToolInfo,
         timeout: Duration,
         file: String,
-        codes: NewCodes,
-        benchs: BenchHMap<NewBenchRes>,
+        codes: CodeInfos,
+        benchs: BenchHMap<BenchRes>,
     ) -> Self {
         let (mut suc_count, mut err_count, mut tmo_count) = (0, 0, 0);
         for res in benchs.values() {
             match res {
-                NewBenchRes::Success(_, _) => suc_count += 1,
-                NewBenchRes::Error(_) => err_count += 1,
-                NewBenchRes::Timeout => tmo_count += 1,
+                BenchRes::Success(_, _) => suc_count += 1,
+                BenchRes::Error(_) => err_count += 1,
+                BenchRes::Timeout => tmo_count += 1,
             }
         }
         ToolRes {
@@ -113,7 +103,10 @@ impl ToolRes {
     }
 
     /// Loads a tool result from a file.
-    fn of(file: &str, run_res: &mut RunRes) -> Res<Self> {
+    fn of<Conf>(conf: &Conf, file: &str, run_res: &mut RunRes) -> Res<Self>
+    where
+        Conf: GConfExt,
+    {
         let mut reader = ::std::fs::OpenOptions::new()
             .read(true)
             .open(&file)
@@ -122,14 +115,14 @@ impl ToolRes {
         reader
             .read_to_string(&mut txt)
             .chain_err(|| format!("error reading file `{}`", file))?;
-        ::load::res(&GConf::mk(Verb::Normal, true, false), run_res, &file)
+        ::load::res(conf, run_res, &file)
     }
 
     /// Returns the lowest and highest runtime for successful benchmarks.
     pub fn time_interval(&self) -> Option<(Duration, Duration)> {
         let mut interval = None;
         for res in self.benchs.values() {
-            if let NewBenchRes::Success(time, _) = res {
+            if let BenchRes::Success(time, _) = res {
                 let time = *time;
                 let (lo, hi) = interval.unwrap_or((time, time));
                 interval = Some((::std::cmp::min(time, lo), ::std::cmp::max(time, hi)))
@@ -146,7 +139,7 @@ impl ToolRes {
             self.benchs
                 .values()
                 .fold(Vec::with_capacity(self.benchs.len()), |mut vec, res| {
-                    if let NewBenchRes::Success(time, _) = res {
+                    if let BenchRes::Success(time, _) = res {
                         vec.push(*time)
                     }
                     vec
@@ -203,13 +196,16 @@ pub struct RunRes {
 }
 impl RunRes {
     /// From some data files.
-    pub fn of_files(files: Vec<String>) -> Res<Self> {
+    pub fn of_files<Conf>(conf: &Conf, files: Vec<String>) -> Res<Self>
+    where
+        Conf: GConfExt,
+    {
         let mut res = RunRes {
             tools: Vec::with_capacity(files.len()),
             benchs: BenchHMap::with_capacity(211),
         };
         for file in files {
-            let tool_res = ToolRes::of(&file, &mut res)?;
+            let tool_res = ToolRes::of(conf, &file, &mut res)?;
             res.tools.push(tool_res)
         }
         res.benchs.shrink_to_fit();
@@ -262,7 +258,7 @@ impl RunRes {
             for res in tool.benchs.values_mut() {
                 if res.is_err() {
                     changed += 1;
-                    *res = NewBenchRes::Timeout;
+                    *res = BenchRes::Timeout;
                     tool.err_count -= 1;
                     tool.tmo_count += 1;
                 }
@@ -299,9 +295,9 @@ pub enum DataFileHandler<'a> {
     /// Split, as many files as validators *used*.
     Split {
         /// The `Codes` common to all tools.
-        codes: NewCodes,
+        codes: CodeInfos,
         /// Map from error codes to data files and their path.
-        map: HashMap<Validation, (File, PathBuf)>,
+        map: CodeMap<(File, PathBuf)>,
         /// File and path for unknowns (in case of double timeout / error).
         unknown: Option<(File, PathBuf)>,
         /// Conf.
@@ -356,7 +352,7 @@ impl<'a> DataFileHandler<'a> {
                 let (file, path) = Self::data_file_of(conf, None)?;
                 Ok(DataFileHandler::Merged { file, path })
             } else {
-                let map = HashMap::with_capacity(codes.len());
+                let map = CodeMap::new();
                 Ok(DataFileHandler::Split {
                     codes,
                     map,
@@ -368,7 +364,7 @@ impl<'a> DataFileHandler<'a> {
     }
 
     /// Returns the data file corresponding to a validator.
-    pub fn file_of(&mut self, code: Option<Validation>) -> Res<(&mut File, &PathBuf)> {
+    pub fn file_of(&mut self, code: Option<Code>) -> Res<(&mut File, &PathBuf)> {
         match *self {
             DataFileHandler::Merged {
                 ref mut file,

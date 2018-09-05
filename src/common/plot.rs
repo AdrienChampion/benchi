@@ -31,7 +31,7 @@ impl GConfExt for PlotConf {
 impl PlotConf {
     /// Creates a plot conf.
     #[inline]
-    pub fn mk(
+    pub fn new(
         file: String,
         gnuplot: bool,
         then: Option<String>,
@@ -111,7 +111,7 @@ impl PlotConf {
     /// Plot data file specific to a tool.
     ///
     /// Corresponds to `<plot_path>/<plot_file_basename>_<tool_short>.data`.
-    pub fn data_file_path_of(&self, tool: &NewToolConf) -> Res<PathBuf> {
+    pub fn data_file_path_of(&self, tool: &ToolInfo) -> Res<PathBuf> {
         let mut res = PathBuf::new();
         let path = Path::new(&self.file);
         res.push(if let Some(path) = path.parent() {
@@ -419,7 +419,7 @@ pub fn plot_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
             None
         };
 
-        let mut plot_conf = match PlotConf::mk(file, run_gp, cmd, fmt, conf) {
+        let mut plot_conf = match PlotConf::new(file, run_gp, cmd, fmt, conf) {
             Ok(conf) => conf,
             Err(e) => return Some(Err(e)),
         };

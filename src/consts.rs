@@ -60,13 +60,11 @@ pub mod clap {
     }
 
     lazy_static!{
-    #[doc = "
-Regex for timeout in clap. Two groups: `value` (int) and `unit` (`min` or `s`).
-    "]
-                pub static ref tmo_regex: Regex = Regex::new(
-                  r"^(?P<value>\d\d*)(?P<unit>min|s)$"
-                ).unwrap() ;
-              }
+        /// Regex for timeout in clap. Two groups: `value` (int) and `unit` (`min` or `s`).
+        pub static ref tmo_regex: Regex = Regex::new(
+            r"^(?P<value>\d\d*)(?P<unit>min|s)$"
+        ).unwrap() ;
+    }
 }
 
 /// Substitutions in user-provided data.
@@ -104,34 +102,6 @@ pub mod subst {
         "problem in `timeout` static regex"
       ) ;
     }
-}
-
-/// Bench data dumping.
-pub mod dump {
-    /// Comment prefix.
-    pub static cmt_pref: &str = "#";
-    #[doc = "Key for short names."]
-    pub static short_name_key: &str = "short";
-    #[doc = "Key for graph names."]
-    pub static graph_name_key: &str = "graph";
-    #[doc = "Key for commands."]
-    pub static cmd_key: &str = "cmd";
-    #[doc = "Key for timeouts."]
-    pub static timeout_key: &str = "timeout";
-    #[doc = "Key for the validator."]
-    pub static vald_key: &str = "validator";
-    #[doc = "Key for validator conf."]
-    pub static vald_conf_key: &str = "validators";
-    #[doc = "Key for validator conf success codes."]
-    pub static vald_conf_suc_key: &str = "success";
-}
-
-/// Data-related regexs
-pub mod data {
-    #[doc = "Indicates a timeout result."]
-    pub static timeout_res: &str = "timeout";
-    #[doc = "Indicates an error result."]
-    pub static error_res: &str = "error";
 }
 
 /// Example configuration file.

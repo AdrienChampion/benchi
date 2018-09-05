@@ -107,7 +107,7 @@ pub struct Matches<'a> {
 }
 impl<'a> Matches<'a> {
     /// Creates a `Matches` from an `ArgMatches`.
-    pub fn mk(primary: ArgMatches<'a>) -> Self {
+    pub fn new(primary: ArgMatches<'a>) -> Self {
         Matches {
             primary,
             secondary: vec![],
@@ -253,7 +253,7 @@ pub fn gconf_of_matches<'a>(matches: &Matches<'a>) -> GConf {
         .and_then(|s| bool_of_str(&s))
         .expect("unreachable(colored): default is provided and input validated in clap");
 
-    GConf::mk(verb, colored, ow_files)
+    GConf::new(verb, colored, ow_files)
 }
 
 /// All the subcommands.
@@ -267,15 +267,15 @@ pub fn subcommands<'a, 'b>() -> Vec<App<'a, 'b>> {
 }
 
 /// Complete clap.
-pub fn mk_clap<'a, 'b>() -> App<'a, 'b> {
+pub fn new_clap<'a, 'b>() -> App<'a, 'b> {
     main_app().subcommands(subcommands())
 }
 
 /// Clap.
 pub fn work() -> Res<Clap> {
-    let original_matches = mk_clap().get_matches();
+    let original_matches = new_clap().get_matches();
 
-    let matches = &Matches::mk(original_matches);
+    let matches = &Matches::new(original_matches);
 
     if let Some(res) = run_clap(matches) {
         res
@@ -412,7 +412,7 @@ fn clap_tmo() {
 
 #[test]
 fn clap_fails() {
-    let clap = mk_clap();
+    let clap = new_clap();
 
     let args: Vec<&'static str> = vec!["benchi"];
     assert!(clap.clone().get_matches_from_safe(args).is_err());
@@ -444,14 +444,14 @@ fn clap_fails() {
 
 #[test]
 fn hierarchical_matches_and_gconf() {
-    let clap = mk_clap();
+    let clap = new_clap();
 
     let args_1 = vec!["benchi", "run", "-o", "output", "run.conf", "benchs"];
     let m_1 = clap
         .clone()
         .get_matches_from_safe(args_1)
         .expect("should not fail");
-    let mut m = Matches::mk(m_1);
+    let mut m = Matches::new(m_1);
     let args_2 = vec!["benchi", "run", "-o", "blah", "blah.conf", "not benchs"];
     let m_2 = clap
         .clone()
@@ -459,7 +459,7 @@ fn hierarchical_matches_and_gconf() {
         .expect("should not fail");
     m.push(m_2);
     let conf = ::clap::gconf_of_matches(&m);
-    assert_eq!(conf, GConf::mk(Verb::Normal, true, false));
+    assert_eq!(conf, GConf::new(Verb::Normal, true, false));
     assert!(
         m.subcommand_matches("run")
             .unwrap()
@@ -484,7 +484,7 @@ fn hierarchical_matches_and_gconf() {
         .clone()
         .get_matches_from_safe(args_1)
         .expect("should not fail");
-    let mut m = Matches::mk(m_1);
+    let mut m = Matches::new(m_1);
     let args_2 = vec!["benchi", "run", "-o", "output", "blah.conf"];
     let m_2 = clap
         .clone()
@@ -492,7 +492,7 @@ fn hierarchical_matches_and_gconf() {
         .expect("should not fail");
     m.push(m_2);
     let conf = ::clap::gconf_of_matches(&m);
-    assert_eq!(conf, GConf::mk(Verb::Normal, true, true));
+    assert_eq!(conf, GConf::new(Verb::Normal, true, true));
     assert_eq!(m.value_of("force"), Some("on"));
     assert!(
         !m.subcommand_matches("run")
@@ -518,7 +518,7 @@ fn hierarchical_matches_and_gconf() {
         .clone()
         .get_matches_from_safe(args_1)
         .expect("should not fail");
-    let mut m = Matches::mk(m_1);
+    let mut m = Matches::new(m_1);
     let args_2 = vec![
         "benchi",
         "-c",
@@ -535,7 +535,7 @@ fn hierarchical_matches_and_gconf() {
         .expect("should not fail");
     m.push(m_2);
     let conf = ::clap::gconf_of_matches(&m);
-    assert_eq!(conf, GConf::mk(Verb::Quiet, false, true));
+    assert_eq!(conf, GConf::new(Verb::Quiet, false, true));
     assert_eq!(m.value_of("force"), Some("on"));
     assert!(
         !m.subcommand_matches("run")

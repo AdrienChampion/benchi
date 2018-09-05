@@ -5,7 +5,7 @@ run = [ "echo_1", "echo_2" ]
 [tools]
 
   [tools.echo_1]
-  cmd = "echo"
+  cmd = "echo -e"
   validator = "my_validator"
 
   [tools.echo_2]

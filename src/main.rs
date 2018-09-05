@@ -6,8 +6,7 @@
 #[macro_use]
 extern crate benchi;
 
-use benchi::common::run::*;
-use benchi::common::*;
+use benchi::{common::run::*, common::*, run::Master};
 
 /// Entry point.
 fn main() {
@@ -65,7 +64,7 @@ fn main() {
     ::std::process::exit(0)
 }
 
-fn load_instance(conf: &mut RunConf, tools: NewToolConfs) -> Res<Instance> {
+fn load_instance(conf: &mut RunConf, tools: ToolInfos) -> Res<Instance> {
     let mut benchs = {
         let buff_read = try!(
             File::open(&conf.bench_file)
@@ -113,7 +112,7 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
         )
     })?;
 
-    let mut master = ::benchi::run::Master::mk(conf.clone(), instance.clone())?;
+    let mut master = Master::new(conf.clone(), instance.clone())?;
 
     log! { conf =>
         { log!( conf, verb => "" ) }
@@ -155,20 +154,9 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
 
         "" ;
 
-        "Tools:" ;
+        "{}\n", master.stats.to_string_pretty(conf.as_ref(), & instance) ;
 
         {
-            for tool in instance.tools() {
-                let (avg, cnt) = master.avg_runtime[tool] ;
-                log!{ conf =>
-                    "  {}: {} solved, average runtime: {}",
-                    conf.emph( instance[tool].ident() ), cnt,
-                    if cnt > 0 { avg.as_sec_str() } else {
-                        "no benchmark passed".into()
-                    }
-                }
-            }
-        } {
             if master.inconsistencies > 0 {
                 log!{ conf =>
                     "" ; "{}", conf.bad(

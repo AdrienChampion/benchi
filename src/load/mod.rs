@@ -10,8 +10,8 @@ use common::{
 mod res;
 mod run;
 
-pub use self::res::NewBenchRes;
-pub use self::run::{NewCode, NewCodes, NewToolConf, NewToolConfs};
+/// Map from strings to something.
+type StrMap<T> = Map<String, T>;
 
 /// Run configuration loader.
 ///
@@ -20,23 +20,28 @@ pub use self::run::{NewCode, NewCodes, NewToolConf, NewToolConfs};
 /// - the options declared in the file, if any
 /// - the **active** tool configuration parsed
 /// - the exit codes parsed
-pub fn run<P>(gconf: &GConf, file: P) -> Res<(Option<String>, NewToolConfs, NewCodes)>
+pub fn run<P, Conf>(gconf: &Conf, file: P) -> Res<(Option<String>, ToolInfos, CodeInfos)>
 where
     P: AsRef<Path>,
+    Conf: GConfExt,
 {
     run::toml(gconf, file)
 }
 
 /// Result data file loader.
-pub fn res<P>(gconf: &GConf, run_res: &mut RunRes, file: P) -> Res<ToolRes>
+pub fn res<P, Conf>(gconf: &Conf, run_res: &mut RunRes, file: P) -> Res<ToolRes>
 where
     P: AsRef<Path>,
+    Conf: GConfExt,
 {
     res::toml(gconf, run_res, file)
 }
 
 /// Handles a serde load error.
-fn serde_error(gconf: &GConf, e: &::toml::de::Error, txt: &str) -> Error {
+fn serde_error<Conf>(gconf: &Conf, e: &::toml::de::Error, txt: &str) -> Error
+where
+    Conf: GConfExt,
+{
     let mut error = format!("{}", e);
 
     if let Some((l, c)) = e.line_col() {
@@ -61,4 +66,44 @@ fn serde_error(gconf: &GConf, e: &::toml::de::Error, txt: &str) -> Error {
     }
 
     error.into()
+}
+
+/// Validator exit code right after loading.
+///
+/// Used by `load::run` and `load::res`.
+#[derive(Debug, Serialize, Deserialize)]
+struct LCodeInfo {
+    /// Exit code.
+    code: i64,
+    /// Graph name.
+    graph: Option<String>,
+}
+
+/// Creates a `CodeInfos` from some `LCodeInfo`s.
+///
+/// Used by `load::run` and `load::res`.
+fn new_codes<Conf>(gconf: &Conf, map: StrMap<LCodeInfo>) -> Res<CodeInfos>
+where
+    Conf: GConfExt,
+{
+    let mut codes = CodeInfos::new();
+
+    for (name, code) in map {
+        // Create graph name.
+        let graph = code.graph.unwrap_or_else(|| name.clone());
+
+        // Transcribe to i32.
+        use std::str::FromStr;
+        let val_code = match Code::from_str(&format!("{}", code.code)) {
+            Ok(code) => code,
+            Err(e) => bail!("exit code for {} is not valid: {}", gconf.bad(&name), e),
+        };
+
+        // Build exit code structure.
+        let code = CodeInfo::new(name.clone(), val_code, graph);
+
+        codes.insert(gconf, code)?
+    }
+
+    Ok(codes)
 }

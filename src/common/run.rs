@@ -21,14 +21,16 @@ pub struct RunConf {
     pub try: Option<usize>,
     /// Logging stdout?
     pub log_stdout: bool,
+    /// Progress bar?
+    pub pbar: bool,
     /// Global configuration.
     gconf: GConf,
     /// Exit codes.
-    codes: NewCodes,
+    codes: CodeInfos,
 }
 
 impl CodesExt for RunConf {
-    fn codes(&self) -> &NewCodes {
+    fn codes(&self) -> &CodeInfos {
         &self.codes
     }
 }
@@ -42,7 +44,7 @@ impl GConfExt for RunConf {
 impl RunConf {
     /// Name of the validator for some tool.
     #[inline]
-    pub fn validator_path_of(&self, tool: &NewToolConf) -> Option<PathBuf> {
+    pub fn validator_path_of(&self, tool: &ToolInfo) -> Option<PathBuf> {
         tool.validator()?;
 
         let mut path = PathBuf::from(&self.out_dir);
@@ -129,6 +131,14 @@ sequentially\
                 .validator(|s| tmo_validator(&s))
                 .default_value("1min")
                 .takes_value(true), /*.number_of_values(1)*/
+        ).arg(
+            Arg::with_name("pbar")
+                .long("--pbar")
+                .help("(De)activates the progress bar.")
+                .value_name(bool_format)
+                .default_value("on")
+                .takes_value(true)
+                .validator(|s| bool_validator(&s)),
         ).arg(
             Arg::with_name("para_benchs")
                 .long("--benchs")
@@ -277,6 +287,11 @@ pub fn run_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
         .expect("unreachable(CONF): required")
         .to_string();
 
+    let pbar = matches
+        .value_of("pbar")
+        .and_then(|s| bool_of_str(&s))
+        .expect("ureachable(pbar): required");
+
     // Bench file.
     let bench_file = if let Some(f) = matches.value_of("BENCHS") {
         f.to_string()
@@ -297,6 +312,7 @@ pub fn run_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
         bench_file,
         gconf: conf,
         codes,
+        pbar,
     };
 
     Some(Ok(Clap::Run(run_conf, Box::new(tools))))

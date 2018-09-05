@@ -1,19 +1,17 @@
 //! Result data file loader.
 
 use common::{
-    res::{RunRes, ToolRes},
+    res::{BenchRes, RunRes, ToolRes},
     *,
 };
 
-use super::{
-    run::{new_codes, LCode},
-    serde_error,
-};
+use super::{new_codes, serde_error, LCodeInfo, StrMap};
 
 /// Loads a toml res data file.
-pub fn toml<P>(gconf: &GConf, run_res: &mut RunRes, file: P) -> Res<ToolRes>
+pub fn toml<P, Conf>(gconf: &Conf, run_res: &mut RunRes, file: P) -> Res<ToolRes>
 where
     P: AsRef<Path>,
+    Conf: GConfExt,
 {
     let file = file.as_ref();
 
@@ -28,71 +26,20 @@ where
     res.finalize(gconf, run_res, file.to_string_lossy().into_owned())
 }
 
-/// Result of a tool running on a benchmark.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NewBenchRes {
-    /// Success with a time and an optional validation code.
-    Success(Duration, Validation),
-    /// Timeout.
-    Timeout,
-    /// Error.
-    Error(Duration),
-}
-impl NewBenchRes {
-    /// True if the result is an error.
-    pub fn is_err(self) -> bool {
-        if let NewBenchRes::Error(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    /// True if the result is a timeout.
-    pub fn is_tmo(self) -> bool {
-        self == NewBenchRes::Timeout
-    }
-
-    /// Success code accessor.
-    pub fn code(self) -> Option<Validation> {
-        if let NewBenchRes::Success(_, code) = self {
-            Some(code)
-        } else {
-            None
-        }
-    }
-
-    /// Map over the different types of data.
-    pub fn map<
-        T,
-        FSucc: FnOnce(Duration, Validation) -> T,
-        FTmo: FnOnce() -> T,
-        FErr: FnOnce(Duration) -> T,
-    >(
-        &self,
-        f_succ: FSucc,
-        f_tmo: FTmo,
-        f_err: FErr,
-    ) -> T {
-        match *self {
-            NewBenchRes::Success(time, vald) => f_succ(time, vald),
-            NewBenchRes::Timeout => f_tmo(),
-            NewBenchRes::Error(time) => f_err(time),
-        }
-    }
-}
-
 /// A run result right after loading.
 #[derive(Debug, Serialize, Deserialize)]
 struct LRes {
     timeout: String,
-    tool: NewToolConf,
-    codes: StrMap<LCode>,
+    tool: ToolInfo,
+    codes: StrMap<LCodeInfo>,
     data: StrMap<LNewBenchRes>,
 }
 impl LRes {
     /// Finalizes a run result.
-    fn finalize(self, gconf: &GConf, run_res: &mut RunRes, file: String) -> Res<ToolRes> {
+    fn finalize<Conf>(self, gconf: &Conf, run_res: &mut RunRes, file: String) -> Res<ToolRes>
+    where
+        Conf: GConfExt,
+    {
         let LRes {
             timeout,
             tool,
@@ -143,9 +90,9 @@ impl LRes {
             })?;
 
             match &res {
-                NewBenchRes::Success(_, _) => suc_count += 1,
-                NewBenchRes::Error(_) => err_count += 1,
-                NewBenchRes::Timeout => tmo_count += 1,
+                BenchRes::Success(_, _) => suc_count += 1,
+                BenchRes::Error(_) => err_count += 1,
+                BenchRes::Timeout => tmo_count += 1,
             }
 
             let prev = benchs.insert(index, res);
@@ -198,22 +145,23 @@ struct LNewBenchRes {
     time: Option<String>,
     code: Option<i32>,
 }
+
 impl LNewBenchRes {
-    /// Turns itself into a `NewBenchRes`.
-    fn into_bench_res(self) -> Res<(String, NewBenchRes)> {
+    /// Turns itself into a `BenchRes`.
+    fn into_bench_res(self) -> Res<(String, BenchRes)> {
         let LNewBenchRes { bench, time, code } = self;
         let res = if let Some(time) = time {
             let time = Duration::from_str(&time)
                 .chain_err(|| format!("while recovering runtime for benchmarks `{}`", bench))?;
 
             if let Some(code) = code {
-                NewBenchRes::Success(time, code)
+                BenchRes::Success(time, code)
             } else {
-                NewBenchRes::Error(time)
+                BenchRes::Error(time)
             }
         } else {
             // Timeout.
-            NewBenchRes::Timeout
+            BenchRes::Timeout
         };
 
         Ok((bench, res))

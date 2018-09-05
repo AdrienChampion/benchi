@@ -7,7 +7,7 @@ use common::{plot::*, res::RunRes, *};
 /// Generates the cumulative plot between several tools.
 pub fn work(conf: &PlotConf, files: Vec<String>) -> Res<Option<String>> {
     log!{ conf => "  loading tool data..." }
-    let mut run_res = RunRes::of_files(files)?;
+    let mut run_res = RunRes::of_files(conf, files)?;
 
     if conf.no_errors {
         let dropped = run_res.rm_errs();

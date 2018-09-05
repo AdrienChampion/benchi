@@ -21,7 +21,7 @@ pub fn work(conf: &PlotConf, file_1: &str, file_2: &str) -> Res<Option<String>> 
 
     let (res_1_name, res_2_name) = (data.res_1.tool.ident(), data.res_2.tool.ident());
 
-    let mut code_to_count = HashMap::new();
+    let mut code_to_count = Map::new();
 
     for (bench, bench_res_1) in data.res_1.benchs.drain() {
         if let Some(bench_res_2) = data.res_2.benchs.remove(&bench) {
@@ -291,7 +291,7 @@ impl<'a> CmpPlotData<'a> {
     /// Constructor.
     fn new(conf: &'a PlotConf, file_1: &str, file_2: &str) -> Res<Self> {
         log!{ conf => "  loading tool data..." }
-        let mut run_res = RunRes::of_files(vec![file_1.into(), file_2.into()])?;
+        let mut run_res = RunRes::of_files(conf, vec![file_1.into(), file_2.into()])?;
 
         if conf.no_errors {
             let dropped = run_res.rm_errs();

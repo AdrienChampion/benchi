@@ -1,14 +1,12 @@
-/*! Runners for the different level of running.
-
-The master dispatches the benchmarks over `BenchRun`s. They in turn dispatch
-tool to run to `ToolRun`s.
-
-# TODO
-
-- naming convention is retarded, change it
-- make the bench run say it's waiting only if it has at least one waiting tool
-  run
-*/
+//! Runners for the different level of running.
+//!
+//! The master dispatches the benchmarks over `BenchRun`s. They in turn dispatch tool to run to
+//! `ToolRun`s.
+//!
+//! # TODO
+//!
+//! - naming convention is retarded, change it
+//! - make the bench run say it's waiting only if it has at least one waiting tool run
 
 use common::run::*;
 use common::*;
@@ -35,7 +33,7 @@ unsafe impl Send for ToolRun {}
 impl ToolRun {
     /// Creates (but does not run) a tool run.
     #[inline]
-    fn mk(
+    fn new(
         conf: Arc<RunConf>,
         instance: Arc<Instance>,
         index: usize,
@@ -224,7 +222,7 @@ impl BenchRun {
     ///
     /// `tool_to_master` will be given to the `ToolRun`s spawned.
     #[inline]
-    fn mk(
+    fn new(
         conf: Arc<RunConf>,
         instance: Arc<Instance>,
         index: usize,
@@ -243,7 +241,7 @@ impl BenchRun {
             // Remember sender.
             tool_runs.push(b2t_s);
             // Initialize tool run.
-            let tool_run = ToolRun::mk(
+            let tool_run = ToolRun::new(
                 conf.clone(),
                 instance.clone(),
                 index,
@@ -341,19 +339,17 @@ pub struct Master {
     pub errors: usize,
     /// Number of timeouts.
     pub timeouts: usize,
-    /// Average runtime (does not include timeouts and errors).
-    ///
-    /// Second element is the number of benchmarks solved.
-    pub avg_runtime: ToolMap<(Duration, u32)>,
+    /// Tool statistics
+    pub stats: ToolStats,
     /// Stores the exit status for each tool on the current benchmark. `None` if
     /// timeout or error.
-    pub codes: HashMap<BenchIdx, ToolMap<Option<i32>>>,
+    pub codes: BenchHMap<ToolMap<Option<i32>>>,
     /// Number of inconsistent results obtained.
     pub inconsistencies: usize,
 }
 impl Master {
     /// Creates (but does not run) a master. Initializes everything.
-    pub fn mk(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<Self> {
+    pub fn new(conf: Arc<RunConf>, instance: Arc<Instance>) -> Res<Self> {
         let mut bench_runs = Vec::with_capacity(conf.bench_par);
         // Channel to `self` shared by all **tool runs**.
         let (t2m_s, from_tool_runs) = tool_to_master_channel();
@@ -367,7 +363,7 @@ impl Master {
             // Remember sender.
             bench_runs.push(m2b_s);
             // Initialize bench run.
-            let bench_run = BenchRun::mk(
+            let bench_run = BenchRun::new(
                 conf.clone(),
                 instance.clone(),
                 index,
@@ -380,7 +376,7 @@ impl Master {
             ()
         }
 
-        let pbar = if conf.quiet() {
+        let pbar = if conf.quiet() || !conf.pbar {
             None
         } else {
             let mut pbar =
@@ -393,17 +389,11 @@ impl Master {
             Some(pbar)
         };
 
-        let (tool_files, avg_runtime) = instance.init_tools(
-            &conf,
-            // Fold init for average runtime.
-            ToolMap::with_capacity(instance.tool_len()),
-            // Fold function for average runtime.
-            |avg_runtime: &mut ToolMap<_>, _| {
-                avg_runtime.push((Duration::from_secs(0), 0u32));
-            },
-        )?;
+        let (tool_files, _) = instance.init_tools(&conf, (), |(), _| ())?;
 
-        let codes = HashMap::with_capacity(instance.bench_len());
+        let stats = ToolStats::new(instance.tool_len());
+
+        let codes = BenchHMap::with_capacity(instance.bench_len());
 
         Ok(Master {
             conf,
@@ -415,7 +405,7 @@ impl Master {
             pbar,
             errors: 0,
             timeouts: 0,
-            avg_runtime,
+            stats,
             codes,
             inconsistencies: 0,
         })
@@ -500,16 +490,6 @@ impl Master {
         Ok(Instant::now() - start)
     }
 
-    /// Updates the average run time of a tool, iff it's below the timeout.
-    fn update_avg_runtime(&mut self, tool: ToolIdx, time: Duration) {
-        if time < self.conf.timeout {
-            let (ref mut avg, ref mut cnt) = self.avg_runtime[tool];
-            // Incremental average computation.
-            *cnt += 1;
-            *avg = (*avg * (*cnt - 1) + time) / *cnt
-        }
-    }
-
     /// Receives some results from the tool runs. Returns `true` if disconnected.
     /// Non-blocking.
     fn recv_results(&mut self) -> Res<bool> {
@@ -526,8 +506,8 @@ impl Master {
                     let mut data_line_end = String::new();
 
                     match res {
-                        BenchRes::Success(time, status) => {
-                            self.update_avg_runtime(tool, time);
+                        BenchRes::Success(time, status) if time < self.conf.timeout => {
+                            self.stats[tool].slv(time);
                             if let Err(e) =
                                 self.register_result(bench, tool, status).chain_err(|| {
                                     format!(
@@ -549,7 +529,8 @@ impl Master {
                             }
                         }
 
-                        BenchRes::Timeout(status) => {
+                        BenchRes::Success(_, status) | BenchRes::Timeout(status) => {
+                            self.stats[tool].tmo();
                             self.timeouts += 1;
                             if let Some(code) = status.code() {
                                 data_line_end += ", code = ";
@@ -558,6 +539,7 @@ impl Master {
                         }
 
                         BenchRes::Error(time, status) => {
+                            self.stats[tool].err();
                             self.errors += 1;
                             data_line_end += ", time = \"";
                             data_line_end += &time.as_sec_str();
@@ -633,7 +615,7 @@ impl Master {
                 .get(&bench)
                 .ok_or_else::<Error, _>(|| "unreachable: register_result".into())?;
 
-            let mut disagree = HashMap::new();
+            let mut disagree = ToolHMap::new();
 
             for other_tool in self.instance.tools() {
                 if tool != other_tool {
