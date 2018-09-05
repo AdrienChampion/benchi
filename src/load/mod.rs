@@ -1,17 +1,17 @@
 //! Data loading.
 
-use std::path::Path ;
+use std::path::Path;
 
-use common::{ *, res::{ ToolRes, RunRes } } ;
+use common::{
+    res::{RunRes, ToolRes},
+    *,
+};
 
-mod run ;
-mod res ;
+mod res;
+mod run;
 
-pub use self::run::{
-    NewToolConf, NewToolConfs, NewCode, NewCodes,
-} ;
-pub use self::res::NewBenchRes ;
-
+pub use self::res::NewBenchRes;
+pub use self::run::{NewCode, NewCodes, NewToolConf, NewToolConfs};
 
 /// Run configuration loader.
 ///
@@ -20,40 +20,42 @@ pub use self::res::NewBenchRes ;
 /// - the options declared in the file, if any
 /// - the **active** tool configuration parsed
 /// - the exit codes parsed
-pub fn run<P>(gconf: & GConf, file: P) -> Res<(
-    Option<String>, NewToolConfs, NewCodes
-)> where P: AsRef<Path> {
+pub fn run<P>(gconf: &GConf, file: P) -> Res<(Option<String>, NewToolConfs, NewCodes)>
+where
+    P: AsRef<Path>,
+{
     run::toml(gconf, file)
 }
 
-
 /// Result data file loader.
-pub fn res<P>(gconf: & GConf, run_res: & mut RunRes, file: P) -> Res<ToolRes>
-where P: AsRef<Path> {
+pub fn res<P>(gconf: &GConf, run_res: &mut RunRes, file: P) -> Res<ToolRes>
+where
+    P: AsRef<Path>,
+{
     res::toml(gconf, run_res, file)
 }
 
 /// Handles a serde load error.
-fn serde_error(gconf: & GConf, e: & ::toml::de::Error, txt: & str) -> Error {
-    let mut error = format!("{}", e) ;
+fn serde_error(gconf: &GConf, e: &::toml::de::Error, txt: &str) -> Error {
+    let mut error = format!("{}", e);
 
-    if let Some((l,c)) = e.line_col() {
+    if let Some((l, c)) = e.line_col() {
         for (cnt, line) in txt.lines().enumerate() {
             if cnt == l {
-                let line_count = format!("{}", l + 1) ;
-                error += & format!(
-                    "\n{} |", " ".repeat( line_count.len() )
-                ) ;
-                error += & format!("\n
-                    {} | {}", line_count, line
-                ) ;
-                error += & format!(
+                let line_count = format!("{}", l + 1);
+                error += &format!("\n{} |", " ".repeat(line_count.len()));
+                error += &format!(
+                    "\n
+                    {} | {}",
+                    line_count, line
+                );
+                error += &format!(
                     "{} | {}{}",
-                    " ".repeat( line_count.len() ),
-                    " ".repeat( c ),
+                    " ".repeat(line_count.len()),
+                    " ".repeat(c),
                     gconf.bad("^")
-                ) ;
-                break
+                );
+                break;
             }
         }
     }

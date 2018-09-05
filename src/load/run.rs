@@ -1,13 +1,10 @@
 //! Run configuration loader.
 
-use std::path::Path ;
+use std::path::Path;
 
-use common::* ;
+use common::*;
 
-use super::{
-    serde_error
-} ;
-
+use super::serde_error;
 
 /// Loads a toml run configuration file.
 ///
@@ -16,22 +13,21 @@ use super::{
 /// - the options declared in the file, if any
 /// - the **active** tool configuration parsed
 /// - the exit codes parsed
-pub fn toml<P>(gconf: & GConf, file: P) -> Res<
-    (Option<String>, NewToolConfs, NewCodes)
-> where P: AsRef<Path> {
-    let file = file.as_ref() ;
+pub fn toml<P>(gconf: &GConf, file: P) -> Res<(Option<String>, NewToolConfs, NewCodes)>
+where
+    P: AsRef<Path>,
+{
+    let file = file.as_ref();
 
-    let mut txt = String::new() ;
-    File::open(file)?.read_to_string(& mut txt) ? ;
+    let mut txt = String::new();
+    File::open(file)?.read_to_string(&mut txt)?;
 
-    let conf = match ::toml::from_str::<LRunConf>(& txt) {
+    let conf = match ::toml::from_str::<LRunConf>(&txt) {
         Ok(res) => res,
-        Err(e) => bail!( serde_error(gconf, & e, & txt) ),
-    } ;
+        Err(e) => bail!(serde_error(gconf, &e, &txt)),
+    };
 
-    conf.finalize(gconf).map(
-        |res| res.destroy()
-    )
+    conf.finalize(gconf).map(|res| res.destroy())
 }
 
 /// A run configuration.
@@ -47,13 +43,10 @@ pub struct NewRunConf {
 
 impl NewRunConf {
     /// Detructor.
-    pub fn destroy(self) -> (
-        Option<String>, NewToolConfs, NewCodes
-    ) {
+    pub fn destroy(self) -> (Option<String>, NewToolConfs, NewCodes) {
         (self.options, self.tools, self.codes)
     }
 }
-
 
 /// A tool configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,28 +64,25 @@ impl ToToml for NewToolConf {}
 
 impl NewToolConf {
     /// Tool's identifier.
-    pub fn ident(& self) -> & str {
-        & self.ident
+    pub fn ident(&self) -> &str {
+        &self.ident
     }
 
     /// Tool's validator.
-    pub fn validator(& self) -> Option<& String> {
+    pub fn validator(&self) -> Option<&String> {
         self.validator.as_ref()
     }
 
     /// Tool's command.
-    pub fn cmd(& self) -> & str {
-        & self.cmd
+    pub fn cmd(&self) -> &str {
+        &self.cmd
     }
 
     /// Tool's graph name.
-    pub fn graph_name(& self) -> & str {
-        & self.graph
+    pub fn graph_name(&self) -> &str {
+        &self.graph
     }
 }
-
-
-
 
 /// Tool configurations.
 #[derive(Debug, Clone)]
@@ -102,45 +92,44 @@ pub struct NewToolConfs {
 }
 
 impl ::std::ops::Deref for NewToolConfs {
-    type Target = ToolMap<NewToolConf> ;
-    fn deref(& self) -> & ToolMap<NewToolConf> {
-        & self.tools
+    type Target = ToolMap<NewToolConf>;
+    fn deref(&self) -> &ToolMap<NewToolConf> {
+        &self.tools
     }
 }
 
 impl NewToolConfs {
     /// Constructor.
     fn new() -> Self {
-        NewToolConfs { tools: ToolMap::new() }
+        NewToolConfs {
+            tools: ToolMap::new(),
+        }
     }
 
     /// Insert a new tool.
-    fn insert(& mut self, gconf: & GConf, tool: NewToolConf) -> Res<()> {
-
+    fn insert(&mut self, gconf: &GConf, tool: NewToolConf) -> Res<()> {
         // Do we already know this tool?
-        if self.tools.iter().any(
-            |t| t.ident == tool.ident
-        ) {
-            bail!("tool {} appears as active twice", gconf.bad(& tool.ident))
+        if self.tools.iter().any(|t| t.ident == tool.ident) {
+            bail!("tool {} appears as active twice", gconf.bad(&tool.ident))
         }
 
         // Make sure there's no clash in graph names.
-        for t in & self.tools {
+        for t in &self.tools {
             if tool.graph == t.graph {
                 bail!(
                     "tools {} and {} have the same graph name {}",
-                    gconf.sad(& tool.ident), gconf.sad(& t.ident),
-                    gconf.bad(& tool.graph)
+                    gconf.sad(&tool.ident),
+                    gconf.sad(&t.ident),
+                    gconf.bad(&tool.graph)
                 )
             }
         }
 
-        self.tools.push( tool ) ;
+        self.tools.push(tool);
 
         Ok(())
     }
 }
-
 
 /// Exit code.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,96 +155,93 @@ pub struct NewCodes {
 
 impl NewCodes {
     /// Writes itself in TOML.
-    pub fn toml_write<W>(& self, w: & mut W) -> Res<()>
-    where W: Write {
+    pub fn toml_write<W>(&self, w: &mut W) -> Res<()>
+    where
+        W: Write,
+    {
         if let Some((code, graph)) = self.err.as_ref() {
-            writeln!(
-                w, "error = {{ code = {}, graph = \"{}\" }}", code, graph
-            ) ?
+            writeln!(w, "error = {{ code = {}, graph = \"{}\" }}", code, graph)?
         }
         if let Some((code, graph)) = self.tmo.as_ref() {
-            writeln!(
-                w, "timeout = {{ code = {}, graph = \"{}\" }}", code, graph
-            ) ?
+            writeln!(w, "timeout = {{ code = {}, graph = \"{}\" }}", code, graph)?
         }
 
         for info in self.codes.values() {
             writeln!(
-                w, "{} = {{ code = {}, graph = \"{}\" }}",
+                w,
+                "{} = {{ code = {}, graph = \"{}\" }}",
                 info.name, info.code, info.graph
-            ) ?
+            )?
         }
 
-        if ! self.codes.is_empty()
-        || self.err.is_some()
-        || self.tmo.is_some() {
-            writeln!(w) ?
+        if !self.codes.is_empty() || self.err.is_some() || self.tmo.is_some() {
+            writeln!(w)?
         }
 
         Ok(())
     }
 
     /// True if their are no success codes.
-    pub fn is_empty(& self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
     /// Number of success codes defined.
-    pub fn len(& self) -> usize {
+    pub fn len(&self) -> usize {
         self.codes.len()
     }
 
     /// Constructor.
     fn new() -> NewCodes {
         NewCodes {
-            err: None, tmo: None, codes: Map::new()
+            err: None,
+            tmo: None,
+            codes: Map::new(),
         }
     }
 
     /// Sets the error code and its graph name.
-    fn set_err(& mut self, code: Validation, name: String) -> Res<()> {
+    fn set_err(&mut self, code: Validation, name: String) -> Res<()> {
         if self.err.is_some() {
             bail!("trying to set error code twice")
         }
-        self.err = Some((code, name)) ;
+        self.err = Some((code, name));
         Ok(())
     }
 
     /// Sets the error code and its graph name.
-    fn set_tmo(& mut self, code: Validation, name: String) -> Res<()> {
+    fn set_tmo(&mut self, code: Validation, name: String) -> Res<()> {
         if self.tmo.is_some() {
             bail!("trying to set timeout code twice")
         }
-        self.tmo = Some((code, name)) ;
+        self.tmo = Some((code, name));
         Ok(())
     }
 
     /// Inserts a new code.
-    fn insert(& mut self, gconf: & GConf, code: NewCode) -> Res<()> {
+    fn insert(&mut self, gconf: &GConf, code: NewCode) -> Res<()> {
         if code.name == "error" {
-            return self.set_err(code.code, code.graph)
+            return self.set_err(code.code, code.graph);
         }
         if code.name == "timeout" {
-            return self.set_tmo(code.code, code.graph)
+            return self.set_tmo(code.code, code.graph);
         }
 
         // Make sure code name is not reserved.
-        if ::consts::validator::reserved.contains(& code.name as & str) {
+        if ::consts::validator::reserved.contains(&code.name as &str) {
             bail!(
                 "illegal validator code name {}: this name is reserved",
-                gconf.bad(& code.name)
+                gconf.bad(&code.name)
             )
         }
 
-        let prev = self.codes.insert(code.code, code) ;
+        let prev = self.codes.insert(code.code, code);
 
         if let Some(prev) = prev {
             bail!(
                 "validator codes {} and {} have the same code {}",
-                gconf.sad(
-                    & self.codes.get(& prev.code).unwrap().name
-                ),
-                gconf.sad(& prev.name),
-                gconf.bad( & format!("{}", prev.code) )
+                gconf.sad(&self.codes[&prev.code].name),
+                gconf.sad(&prev.name),
+                gconf.bad(&format!("{}", prev.code))
             )
         }
 
@@ -263,48 +249,47 @@ impl NewCodes {
     }
 
     /// Defines all the codes bash-style.
-    pub fn bash_write<W>(& self, w: & mut W) -> Res<()>
-    where W: Write {
+    pub fn bash_write<W>(&self, w: &mut W) -> Res<()>
+    where
+        W: Write,
+    {
         if let Some((code, name)) = self.err.as_ref() {
             if name != "error" {
-                writeln!(w, "# {}", name) ?
+                writeln!(w, "# {}", name)?
             }
-            writeln!(w, "error=\"{}\"", code) ?
+            writeln!(w, "error=\"{}\"", code)?
         }
         if let Some((code, name)) = self.tmo.as_ref() {
             if name != "timeout" {
-                writeln!(w, "# {}", name) ?
+                writeln!(w, "# {}", name)?
             }
-            writeln!(w, "timeout=\"{}\"", code) ?
+            writeln!(w, "timeout=\"{}\"", code)?
         }
 
-        for (code, info) in & self.codes{
+        for (code, info) in &self.codes {
             if info.graph != info.name {
-                writeln!(w, "# {}", info.graph) ?
+                writeln!(w, "# {}", info.graph)?
             }
-            writeln!(w, "{}=\"{}\"", info.name, code) ?
+            writeln!(w, "{}=\"{}\"", info.name, code)?
         }
 
         Ok(())
     }
 
     /// True if the code is register as a success.
-    pub fn is_succ(& self, status: ExitStatus) -> bool {
+    pub fn is_succ(&self, status: ExitStatus) -> bool {
         if let Some(code) = status.code() {
-            self.codes.contains_key(& code)
+            self.codes.contains_key(&code)
         } else {
             false
         }
     }
 
     /// Retrieves the info of an exit code.
-    pub fn get(& self, code: Validation) -> Option<& NewCode> {
-        self.codes.get(& code)
+    pub fn get(&self, code: Validation) -> Option<&NewCode> {
+        self.codes.get(&code)
     }
 }
-
-
-
 
 /// A configuration right after loading.
 #[derive(Debug, Serialize, Deserialize)]
@@ -320,7 +305,6 @@ pub struct LRunConf {
     /// Validators.
     validators: StrMap<String>,
 }
-
 
 /// A tool configuration right after loading.
 #[derive(Debug, Serialize, Deserialize)]
@@ -343,88 +327,87 @@ pub struct LCode {
 }
 
 /// Creates a `NewCodes` from some `LCode`s.
-pub fn new_codes(gconf: & GConf, map: StrMap<LCode>) -> Res<NewCodes> {
-    let mut codes = NewCodes::new() ;
+pub fn new_codes(gconf: &GConf, map: StrMap<LCode>) -> Res<NewCodes> {
+    let mut codes = NewCodes::new();
 
     for (name, code) in map {
         // Create graph name.
-        let graph = code.graph.unwrap_or_else( || name.clone() ) ;
+        let graph = code.graph.unwrap_or_else(|| name.clone());
 
         // Transcribe to i32.
-        use std::str::FromStr ;
-        let val_code = match Validation::from_str(
-            & format!("{}", code.code)
-        ) {
+        use std::str::FromStr;
+        let val_code = match Validation::from_str(&format!("{}", code.code)) {
             Ok(code) => code,
-            Err(e) => bail!(
-                "exit code for {} is not valid: {}",
-                gconf.bad(& name), e
-            ),
-        } ;
+            Err(e) => bail!("exit code for {} is not valid: {}", gconf.bad(&name), e),
+        };
 
         // Build exit code structure.
         let code = NewCode {
-            name: name.clone(), code: val_code, graph
-        } ;
+            name: name.clone(),
+            code: val_code,
+            graph,
+        };
 
-        codes.insert(gconf, code) ?
+        codes.insert(gconf, code)?
     }
 
     Ok(codes)
 }
 
-
 impl LRunConf {
     /// Checks and finalizes an `LRunConf`.
-    fn finalize(mut self, gconf: & GConf) -> Res<NewRunConf> {
-        let options = self.options ;
+    fn finalize(mut self, gconf: &GConf) -> Res<NewRunConf> {
+        let options = self.options;
 
         // This will only store active tools.
-        let mut tools = NewToolConfs::new() ;
+        let mut tools = NewToolConfs::new();
 
         for tool in self.run {
-
             // Retrieve tool configuration.
-            let tool_conf = if let Some(conf) = self.tools.remove(& tool) {
+            let tool_conf = if let Some(conf) = self.tools.remove(&tool) {
                 conf
             } else {
                 bail!(
-                  "unknown tool {} in the list of active tools",
-                  gconf.bad(& tool)
+                    "unknown tool {} in the list of active tools",
+                    gconf.bad(&tool)
                 )
-            } ;
+            };
 
             // Retrieve validator if any.
             let validator = if let Some(v) = tool_conf.validator {
-                if let Some(validator) = self.validators.get(& v) {
-                    Some( validator.clone() )
+                if let Some(validator) = self.validators.get(&v) {
+                    Some(validator.clone())
                 } else {
                     bail!(
                         "tool {} uses unknown validator {}",
-                        gconf.sad(& tool), gconf.bad(& v)
+                        gconf.sad(&tool),
+                        gconf.bad(&v)
                     )
                 }
-            } else { None } ;
+            } else {
+                None
+            };
 
-            let graph = tool_conf.graph.unwrap_or_else(
-                || tool.clone()
-            ) ;
+            let graph = tool_conf.graph.unwrap_or_else(|| tool.clone());
 
             // Build actual tool configuration.
             let conf = NewToolConf {
                 ident: tool,
                 cmd: tool_conf.cmd,
-                graph, validator,
-            } ;
+                graph,
+                validator,
+            };
 
-            tools.insert(gconf, conf) ?
+            tools.insert(gconf, conf)?
         }
 
         // Work on exit codes.
-        let codes = new_codes(gconf, self.codes) ? ;
+        let codes = new_codes(gconf, self.codes)?;
 
-        Ok(
-          NewRunConf { options, tools, codes }
-        )
+        Ok(NewRunConf {
+            options,
+            tools,
+            codes,
+        })
     }
 }

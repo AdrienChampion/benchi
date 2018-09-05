@@ -1,76 +1,75 @@
 //! Run basic types and helpers.
 
-use common::* ;
-
-
-
+use common::*;
 
 /// Run configuration.
 #[derive(Debug)]
 pub struct RunConf {
-  /// Number of parallel bench runs.
-  pub bench_par: usize,
-  /// Number of parallel tool runs.
-  pub tool_par: usize,
-  /// Timeout.
-  pub timeout: Duration,
-  /// Output directory.
-  pub out_dir: String,
-  /// Tool configuration file.
-  pub tool_file: String,
-  /// Benchmark file.
-  pub bench_file: String,
-  /// Trying?
-  pub try: Option<usize>,
-  /// Logging stdout?
-  pub log_stdout: bool,
-  /// Global configuration.
-  gconf: GConf,
-  /// Exit codes.
-  codes: NewCodes,
+    /// Number of parallel bench runs.
+    pub bench_par: usize,
+    /// Number of parallel tool runs.
+    pub tool_par: usize,
+    /// Timeout.
+    pub timeout: Duration,
+    /// Output directory.
+    pub out_dir: String,
+    /// Tool configuration file.
+    pub tool_file: String,
+    /// Benchmark file.
+    pub bench_file: String,
+    /// Trying?
+    pub try: Option<usize>,
+    /// Logging stdout?
+    pub log_stdout: bool,
+    /// Global configuration.
+    gconf: GConf,
+    /// Exit codes.
+    codes: NewCodes,
 }
 
 impl CodesExt for RunConf {
-  fn codes(& self) -> & NewCodes { & self.codes }
+    fn codes(&self) -> &NewCodes {
+        &self.codes
+    }
 }
 
 impl GConfExt for RunConf {
-  fn gconf(& self) -> & GConf { & self.gconf }
+    fn gconf(&self) -> &GConf {
+        &self.gconf
+    }
 }
 
 impl RunConf {
-  /// Name of the validator for some tool.
-  #[inline]
-  pub fn validator_path_of(& self, tool: & NewToolConf) -> Option<PathBuf> {
-    tool.validator() ? ;
+    /// Name of the validator for some tool.
+    #[inline]
+    pub fn validator_path_of(&self, tool: &NewToolConf) -> Option<PathBuf> {
+        tool.validator()?;
 
-    let mut path = PathBuf::from(& self.out_dir) ;
-    path.push( tool.ident() ) ;
-    path.push("validator") ;
-    path.set_extension("sh") ;
-    Some(path)
-  }
+        let mut path = PathBuf::from(&self.out_dir);
+        path.push(tool.ident());
+        path.push("validator");
+        path.set_extension("sh");
+        Some(path)
+    }
 }
-
 
 /// Clap version of the run commands: has a mandatory configuration file
 /// `CONF` in position 1.
 pub fn clap_run_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
-  run_subcommand(
-    Some(
-      ::clap_lib::Arg::with_name("CONF").help(
-        "The configuration file (see `benchi conf -h` for details)"
-      ).required(true).index(1).value_name("conf file")
-    )
-  )
+    run_subcommand(Some(
+        ::clap_lib::Arg::with_name("CONF")
+            .help("The configuration file (see `benchi conf -h` for details)")
+            .required(true)
+            .index(1)
+            .value_name("conf file"),
+    ))
 }
 
 /// Configuration file version of the run commands: no configuration file
 /// argument.
 pub fn conf_run_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
-  run_subcommand(None)
+    run_subcommand(None)
 }
-
 
 /// The `run` subcommand.
 ///
@@ -80,19 +79,18 @@ pub fn conf_run_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
 ///
 /// In the subcommand for parsing options from the configuration file however,
 /// there is no configuration file argument (obviously).
-fn run_subcommand<'a, 'b>(
-  add_arg: Option< ::clap_lib::Arg<'a, 'b> >
-) -> ::clap_lib::App<'a, 'b> {
-  use clap_lib::* ;
-  use consts::clap::* ;
-  use clap::utils::* ;
-  let bench_file_index = if add_arg.is_some() { 2 } else { 1 } ;
+fn run_subcommand<'a, 'b>(add_arg: Option<::clap_lib::Arg<'a, 'b>>) -> ::clap_lib::App<'a, 'b> {
+    use clap::utils::*;
+    use clap_lib::*;
+    use consts::clap::*;
+    let bench_file_index = if add_arg.is_some() { 2 } else { 1 };
 
-  let run_app = SubCommand::with_name("run").about(
-    "Runs benchmarks according to some configuration file (see `conf` \
-    subcommand)."
-  ).before_help(
-    "\
+    let run_app = SubCommand::with_name("run")
+        .about(
+            "Runs benchmarks according to some configuration file (see `conf` \
+             subcommand).",
+        ).before_help(
+            "\
 The different tools run on each benchmark: the value of `--tools` decides how
 many tools can run at the same time. The value of `--benchs` specifies the
 number of benchmarks handled in parallel.
@@ -113,198 +111,193 @@ them. There's actually more threads than that do organize everything, but only
 the same time
 `run --benchs 1 --tools 2 ...` runs up to 2 tools in parallel on each benchmark
 sequentially\
-    "
-  ).arg(
-    Arg::with_name("out_dir").short("-o").long("--out_dir").help(
-      "Sets the output directory"
-    ).value_name("dir").default_value("<today>_at_<now>").takes_value(
-      true
-    )/*.number_of_values(1)*/
-  ).arg(
-    Arg::with_name("timeout").short("-t").long("--timeout").help(
-      "Sets the timeout for each run"
-    ).value_name(::consts::clap::tmo_format).validator(
-      |s| tmo_validator(& s)
-    ).default_value("1min").takes_value(
-      true
-    )/*.number_of_values(1)*/
-  ).arg(
-    Arg::with_name("para_benchs").long("--benchs").help(
-      "Number of benchmarks to run in parallel"
-    ).value_name("int").default_value("1").takes_value(
-      true
-    )/*.number_of_values(1)*/.validator(
-      |s| int_validator( & s )
-    )
-  ).arg(
-    Arg::with_name("para_tools").long("--tools").help(
-      "Number of tools to run in parallel on each benchmark"
-    ).value_name("int").default_value("1").takes_value(
-      true
-    )/*.number_of_values(1)*/.validator(
-      |s| int_validator( & s )
-    )
-  ).arg(
-    Arg::with_name("try").long("--try").help(
-      "Only runs on `n` benchmarks (to try the set up)"
-    ).value_name("int").takes_value(
-      true
-    )/*.number_of_values(1)*/.validator(
-      |s| int_validator( & s )
-    )
-  ).arg(
-    Arg::with_name("log_stdout").long("--log").help(
-      "\
-(De)activates stdout logging of the tools.\
-      "
-    ).default_value("on").takes_value(
-      true
-    )/*.number_of_values(1)*/.validator(
-      |s| bool_validator(& s)
-    ).value_name(bool_format)
-  ).arg(
-    Arg::with_name("BENCHS").help(
-      "\
+    ",
+        ).arg(
+            Arg::with_name("out_dir")
+                .short("-o")
+                .long("--out_dir")
+                .help("Sets the output directory")
+                .value_name("dir")
+                .default_value("<today>_at_<now>")
+                .takes_value(true), /*.number_of_values(1)*/
+        ).arg(
+            Arg::with_name("timeout")
+                .short("-t")
+                .long("--timeout")
+                .help("Sets the timeout for each run")
+                .value_name(::consts::clap::tmo_format)
+                .validator(|s| tmo_validator(&s))
+                .default_value("1min")
+                .takes_value(true), /*.number_of_values(1)*/
+        ).arg(
+            Arg::with_name("para_benchs")
+                .long("--benchs")
+                .help("Number of benchmarks to run in parallel")
+                .value_name("int")
+                .default_value("1")
+                .takes_value(true)
+                /*.number_of_values(1)*/
+                .validator(|s| int_validator(&s)),
+        ).arg(
+            Arg::with_name("para_tools")
+                .long("--tools")
+                .help("Number of tools to run in parallel on each benchmark")
+                .value_name("int")
+                .default_value("1")
+                .takes_value(true)
+                /*.number_of_values(1)*/
+                .validator(|s| int_validator(&s)),
+        ).arg(
+            Arg::with_name("try")
+                .long("--try")
+                .help("Only runs on `n` benchmarks (to try the set up)")
+                .value_name("int")
+                .takes_value(true)
+                /*.number_of_values(1)*/
+                .validator(|s| int_validator(&s)),
+        ).arg(
+            Arg::with_name("log_stdout")
+                .long("--log")
+                .help(
+                    "\
+                     (De)activates stdout logging of the tools.\
+                     ",
+                ).default_value("on")
+                .takes_value(true)
+                /*.number_of_values(1)*/
+                .validator(|s| bool_validator(&s))
+                .value_name(bool_format),
+        ).arg(
+            Arg::with_name("BENCHS")
+                .help(
+                    "\
 The file containing the inputs to give to the tools. Optional, can be
 specified in the configuration file.\
-      "
-    ).value_name("bench file").index(bench_file_index)
-  ) ;
+      ",
+                ).value_name("bench file")
+                .index(bench_file_index),
+        );
 
-  if let Some(arg) = add_arg {
-    run_app.arg(arg)
-  } else {
-    run_app
-  }
-
+    if let Some(arg) = add_arg {
+        run_app.arg(arg)
+    } else {
+        run_app
+    }
 }
 
-
-
 /// `RunConf` from some matches. `None` if `run` subcommand not present.
-pub fn run_clap<'a>(
-  matches: & ::clap::Matches<'a>
-) -> Option< Res<Clap> > {
-  use clap::utils::* ;
+pub fn run_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
+    use clap::utils::*;
 
-  // Retrieve configuration file path if in run mode. Early return otherwise.
-  let conf_file = match matches.subcommand_matches("run") {
-    Some(sub) => sub.value_of("CONF").expect(
-      "unreachable(CONF): required"
-    ).to_string(),
-    None => return None,
-  } ;
+    // Retrieve configuration file path if in run mode. Early return otherwise.
+    let conf_file = match matches.subcommand_matches("run") {
+        Some(sub) => sub
+            .value_of("CONF")
+            .expect("unreachable(CONF): required")
+            .to_string(),
+        None => return None,
+    };
 
-  let mut matches = matches.clone() ;
+    let mut matches = matches.clone();
 
-  // Original global configuration (ignores `conf_file`).
-  let conf = ::clap::gconf_of_matches(& matches) ;
+    // Original global configuration (ignores `conf_file`).
+    let conf = ::clap::gconf_of_matches(&matches);
 
-  let (options, tools, codes) = match ::load::run(& conf, & conf_file) {
-    Ok(res) => res,
-    Err(e) => return Some( Err(e) ),
-  } ;
+    let (options, tools, codes) = match ::load::run(&conf, &conf_file) {
+        Ok(res) => res,
+        Err(e) => return Some(Err(e)),
+    };
 
-  // Actual global configuration.
-  let conf = if let Some(options) = options {
-    let option_clap = ::clap::main_app().subcommand(
-      conf_run_subcommand()
-    ) ;
+    // Actual global configuration.
+    let conf = if let Some(options) = options {
+        let option_clap = ::clap::main_app().subcommand(conf_run_subcommand());
 
-    let file_matches = match option_clap.get_matches_from_safe(
-      options.split_whitespace()
-    ) {
-      Ok(matches) => matches,
-      Err(e) => {
-        let e: Error = format!(
-          "while parsing options from tool configuration file {}: {}",
-          conf.bad(conf_file), e
-        ).into() ;
-        return Some( Err(e) )
-      },
-    } ;
+        let file_matches = match option_clap.get_matches_from_safe(options.split_whitespace()) {
+            Ok(matches) => matches,
+            Err(e) => {
+                let e: Error = format!(
+                    "while parsing options from tool configuration file {}: {}",
+                    conf.bad(conf_file),
+                    e
+                ).into();
+                return Some(Err(e));
+            }
+        };
 
-    matches.push(file_matches) ;
+        matches.push(file_matches);
 
-    ::clap::gconf_of_matches(& matches)
-  } else {
-    conf
-  } ;
+        ::clap::gconf_of_matches(&matches)
+    } else {
+        conf
+    };
 
-  let matches = matches.subcommand_matches("run").expect(
-    "unreachable(run): already checked to be present"
-  ) ;
+    let matches = matches
+        .subcommand_matches("run")
+        .expect("unreachable(run): already checked to be present");
 
-  // Output directory.
-  let out_dir = matches.value_of("out_dir").expect(
-    "unreachable(out_dir): default is provided"
-  ).path_subst() ;
+    // Output directory.
+    let out_dir = matches
+        .value_of("out_dir")
+        .expect("unreachable(out_dir): default is provided")
+        .path_subst();
 
-  // Bench and tool parallel settings.
-  let bench_par = matches.value_of("para_benchs").map(
-    |s| usize::from_str(& s)
-  ).expect(
-    "unreachable(bench_par): default is provided"
-  ).expect(
-    "unreachable(bench_par): input validated in clap"
-  ) ;
-  let tool_par = matches.value_of("para_tools").map(
-    |s| usize::from_str(& s)
-  ).expect(
-    "unreachable(tool_par): default is provided"
-  ).expect(
-    "unreachable(tool_par): input validated in clap"
-  ) ;
+    // Bench and tool parallel settings.
+    let bench_par = matches
+        .value_of("para_benchs")
+        .map(|s| usize::from_str(&s))
+        .expect("unreachable(bench_par): default is provided")
+        .expect("unreachable(bench_par): input validated in clap");
+    let tool_par = matches
+        .value_of("para_tools")
+        .map(|s| usize::from_str(&s))
+        .expect("unreachable(tool_par): default is provided")
+        .expect("unreachable(tool_par): input validated in clap");
 
-  let try = matches.value_of("try").map(
-    |s| usize::from_str(& s).expect(
-      "unreachable(tool_par): input validated in clap"
-    )
-  ) ;
+    let try = matches
+        .value_of("try")
+        .map(|s| usize::from_str(&s).expect("unreachable(tool_par): input validated in clap"));
 
-  // Timeout.
-  let timeout = matches.value_of("timeout").map(
-    |s| tmo_of_str(& s)
-  ).expect(
-    "unreachable(timeout): default is provided"
-  ).expect(
-    "unreachable(timeout): input validated in clap"
-  ) ;
-  
-  let log_stdout = matches.value_of("log_stdout").and_then(
-    |s| {
-      bool_of_str(& s)
-    }
-  ).expect(
-    "unreachable(log_stdout): \
-    default is provided and input validated in clap"
-  ) ;
-  
-  let tool_file = matches.value_of("CONF").expect(
-    "unreachable(CONF): required"
-  ).to_string() ;
+    // Timeout.
+    let timeout = matches
+        .value_of("timeout")
+        .map(|s| tmo_of_str(&s))
+        .expect("unreachable(timeout): default is provided")
+        .expect("unreachable(timeout): input validated in clap");
 
-  // Bench file.
-  let bench_file = if let Some(f) = matches.value_of("BENCHS") {
-    f.to_string()
-  } else {
-    return Some(
-      Err(
-        "no benchmark file specified in \
-        command line or configuration file".into()
-      )
-    )
-  } ;
+    let log_stdout = matches
+        .value_of("log_stdout")
+        .and_then(|s| bool_of_str(&s))
+        .expect(
+            "unreachable(log_stdout): \
+             default is provided and input validated in clap",
+        );
 
-  let run_conf = RunConf {
-    bench_par, tool_par, timeout, try, log_stdout, out_dir,
-    tool_file,
-    bench_file,
-    gconf: conf,
-    codes
-  } ;
+    let tool_file = matches
+        .value_of("CONF")
+        .expect("unreachable(CONF): required")
+        .to_string();
 
-  Some(
-    Ok( Clap::Run(run_conf, Box::new(tools)) )
-  )
+    // Bench file.
+    let bench_file = if let Some(f) = matches.value_of("BENCHS") {
+        f.to_string()
+    } else {
+        return Some(Err("no benchmark file specified in \
+                         command line or configuration file"
+            .into()));
+    };
+
+    let run_conf = RunConf {
+        bench_par,
+        tool_par,
+        timeout,
+        try,
+        log_stdout,
+        out_dir,
+        tool_file,
+        bench_file,
+        gconf: conf,
+        codes,
+    };
+
+    Some(Ok(Clap::Run(run_conf, Box::new(tools))))
 }

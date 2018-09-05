@@ -1,331 +1,299 @@
 //! Command-Line Argument Parsing (clap).
 
-use clap_lib::{
-  App, Arg, SubCommand, ArgMatches, AppSettings
-} ;
+use clap_lib::{App, AppSettings, Arg, ArgMatches, SubCommand};
 
-use common::* ;
-use common::run::* ;
-use common::plot::* ;
-use common::inspect::* ;
+use common::inspect::*;
+use common::plot::*;
+use common::run::*;
+use common::*;
 
-use consts::clap::* ;
+use consts::clap::*;
 
-use clap::utils::* ;
-
+use clap::utils::*;
 
 /// Useful functions for clap.
 pub mod utils {
-  use common::* ;
-  use consts::clap::* ;
+    use common::*;
+    use consts::clap::*;
 
-  /// Returns a clap error for the timeout argument.
-  pub fn tmo_err(got: & str) -> Error {
-    clap_err(
-      "argument timeout",
-      format!("expected `{}`, got {}", ::consts::clap::tmo_format, got)
-    )
-  }
-
-  /// Timeout from a string.
-  pub fn tmo_of_str(s: & str) -> Res<Duration> {
-    if let Some(caps) = tmo_regex.captures(s) {
-      debug_assert_eq!{ caps.len(), 3 }
-
-      let value = if let Ok(value) = u64::from_str(
-        & caps["value"]
-      ) { value } else {
-        bail!(
-          clap_err(
-            "timeout argument",
-            format!("expected integer, got `{}`", & caps["value"])
-          )
+    /// Returns a clap error for the timeout argument.
+    pub fn tmo_err(got: &str) -> Error {
+        clap_err(
+            "argument timeout",
+            format!("expected `{}`, got {}", ::consts::clap::tmo_format, got),
         )
-      } ;
-
-      let coef = match & caps["unit"] {
-        "s" => 1,
-        "min" => 60,
-        "" => bail!(
-          clap_err(
-            "timeout argument",
-            "missing time unit `s` or `min`"
-          )
-        ),
-        s => bail!(
-          clap_err(
-            "timeout argument",
-            format!("expected time unit `s` or `min`, got `{}`", s)
-          )
-        ),
-      } ;
-
-      Ok( Duration::new(coef * value, 0) )
-    } else {
-      bail!(
-        tmo_err("timeout argument", )
-      )
     }
-  }
 
-  /// Timeout validator.
-  pub fn tmo_validator(s: & str) -> Result<(), String> {
-    if tmo_of_str(s).is_ok() {
-      Ok(())
-    } else {
-      Err(
-        format!("expected <{}>, got `{}`", ::consts::clap::tmo_format, s)
-      )
-    }
-  }
+    /// Timeout from a string.
+    pub fn tmo_of_str(s: &str) -> Res<Duration> {
+        if let Some(caps) = tmo_regex.captures(s) {
+            debug_assert_eq!{ caps.len(), 3 }
 
-  /// Boolean of a string.
-  pub fn bool_of_str(s: & str) -> Option<bool> {
-    match & s as & str {
-      "on" | "true" => Some(true),
-      "off" | "false" => Some(false),
-      _ => None,
-    }
-  }
+            let value = if let Ok(value) = u64::from_str(&caps["value"]) {
+                value
+            } else {
+                bail!(clap_err(
+                    "timeout argument",
+                    format!("expected integer, got `{}`", &caps["value"])
+                ))
+            };
 
-  /// Validates boolean input.
-  pub fn bool_validator(s: & str) -> Result<(), String> {
-    if bool_of_str(s).is_some() {
-      Ok(())
-    } else {
-      Err(
-        format!("expected `on/true` or `off/false`, got `{}`", s)
-      )
-    }
-  }
+            let coef = match &caps["unit"] {
+                "s" => 1,
+                "min" => 60,
+                "" => bail!(clap_err(
+                    "timeout argument",
+                    "missing time unit `s` or `min`"
+                )),
+                s => bail!(clap_err(
+                    "timeout argument",
+                    format!("expected time unit `s` or `min`, got `{}`", s)
+                )),
+            };
 
-  /// Validates integer input.
-  pub fn int_validator(s: & str) -> Result<(), String> {
-    match usize::from_str(s) {
-      Ok(_) => Ok(()),
-      Err(_) => Err(
-        format!("expected an integer, got `{}`", s)
-      ),
+            Ok(Duration::new(coef * value, 0))
+        } else {
+            bail!(tmo_err("timeout argument",))
+        }
     }
-  }
+
+    /// Timeout validator.
+    pub fn tmo_validator(s: &str) -> Result<(), String> {
+        if tmo_of_str(s).is_ok() {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected <{}>, got `{}`",
+                ::consts::clap::tmo_format,
+                s
+            ))
+        }
+    }
+
+    /// Boolean of a string.
+    pub fn bool_of_str(s: &str) -> Option<bool> {
+        match &s as &str {
+            "on" | "true" => Some(true),
+            "off" | "false" => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Validates boolean input.
+    pub fn bool_validator(s: &str) -> Result<(), String> {
+        if bool_of_str(s).is_some() {
+            Ok(())
+        } else {
+            Err(format!("expected `on/true` or `off/false`, got `{}`", s))
+        }
+    }
+
+    /// Validates integer input.
+    pub fn int_validator(s: &str) -> Result<(), String> {
+        match usize::from_str(s) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(format!("expected an integer, got `{}`", s)),
+        }
+    }
 }
-
-
-
-
-
-
-
-
 
 /// Wraps several matches, a primary and some secondary ones. Whenever a
 /// request is made, it goes to the primary matches first and then, if **no
 /// occurrence is found** the secondary ones.
 #[derive(Clone, Debug)]
 pub struct Matches<'a> {
-  primary: ArgMatches<'a>,
-  secondary: Vec<ArgMatches<'a> >,
+    primary: ArgMatches<'a>,
+    secondary: Vec<ArgMatches<'a>>,
 }
 impl<'a> Matches<'a> {
-  /// Creates a `Matches` from an `ArgMatches`.
-  pub fn mk(primary: ArgMatches<'a>) -> Self {
-    Matches { primary, secondary: vec![] }
-  }
-
-  /// Adds a secondary `ArgMatches`.
-  pub fn push(& mut self, secondary: ArgMatches<'a>) {
-    self.secondary.push(secondary)
-  }
-
-  /// Checks if an argument is present in any of the matches.
-  pub fn occurs(& self, name: & str) -> bool {
-    if self.primary_occurs(name) {
-      true
-    } else {
-      for secondary in & self.secondary {
-        if secondary.occurrences_of(name) > 0 {
-          return true
+    /// Creates a `Matches` from an `ArgMatches`.
+    pub fn mk(primary: ArgMatches<'a>) -> Self {
+        Matches {
+            primary,
+            secondary: vec![],
         }
-      }
-      false
     }
-  }
 
-  /// Checks if an argument is present in the primary match.
-  pub fn primary_occurs(& self, name: & str) -> bool {
-    self.primary.occurrences_of(name) > 0
-  }
+    /// Adds a secondary `ArgMatches`.
+    pub fn push(&mut self, secondary: ArgMatches<'a>) {
+        self.secondary.push(secondary)
+    }
 
-  /// Calls `values_of` **on the primary matches only**.
-  pub fn primary_values_of(
-    & 'a self, name: & str
-  ) -> Option< ::clap_lib::Values<'a> > {
-    self.primary.values_of(name)
-  }
-
-  /// Retrieves the value of an argument.
-  pub fn value_of(& self, name: & str) -> Option<& str> {
-    if self.primary_occurs(name) || self.secondary.is_empty() {
-      self.primary.value_of(name)
-    } else {
-      for secondary in & self.secondary {
-        if secondary.occurrences_of(name) > 0 {
-          return secondary.value_of(name)
+    /// Checks if an argument is present in any of the matches.
+    pub fn occurs(&self, name: &str) -> bool {
+        if self.primary_occurs(name) {
+            true
+        } else {
+            for secondary in &self.secondary {
+                if secondary.occurrences_of(name) > 0 {
+                    return true;
+                }
+            }
+            false
         }
-      }
-      // Occurs nowhere, returning the value from primary (default or nothing).
-      self.primary.value_of(name)
     }
-  }
 
-  /// Subcommand matches.
-  pub fn subcommand_matches(
-    & self, name: & str
-  ) -> Option< Self > {
-    let mut primary = self.primary.subcommand_matches(name).cloned() ;
-    let mut secondary = vec![] ;
-    for sec in & self.secondary {
-      let sec_sub = sec.subcommand_matches(name).cloned() ;
-      if primary.is_none() {
-        primary = sec_sub
-      } else if let Some(m4tch) = sec_sub {
-        secondary.push(m4tch)
-      }
+    /// Checks if an argument is present in the primary match.
+    pub fn primary_occurs(&self, name: &str) -> bool {
+        self.primary.occurrences_of(name) > 0
     }
-    primary.map(
-      |primary| Matches { primary, secondary }
-    )
-  }
+
+    /// Calls `values_of` **on the primary matches only**.
+    pub fn primary_values_of(&'a self, name: &str) -> Option<::clap_lib::Values<'a>> {
+        self.primary.values_of(name)
+    }
+
+    /// Retrieves the value of an argument.
+    pub fn value_of(&self, name: &str) -> Option<&str> {
+        if self.primary_occurs(name) || self.secondary.is_empty() {
+            self.primary.value_of(name)
+        } else {
+            for secondary in &self.secondary {
+                if secondary.occurrences_of(name) > 0 {
+                    return secondary.value_of(name);
+                }
+            }
+            // Occurs nowhere, returning the value from primary (default or nothing).
+            self.primary.value_of(name)
+        }
+    }
+
+    /// Subcommand matches.
+    pub fn subcommand_matches(&self, name: &str) -> Option<Self> {
+        let mut primary = self.primary.subcommand_matches(name).cloned();
+        let mut secondary = vec![];
+        for sec in &self.secondary {
+            let sec_sub = sec.subcommand_matches(name).cloned();
+            if primary.is_none() {
+                primary = sec_sub
+            } else if let Some(m4tch) = sec_sub {
+                secondary.push(m4tch)
+            }
+        }
+        primary.map(|primary| Matches { primary, secondary })
+    }
 }
-
 
 /// The main application.
 pub fn main_app<'a, 'b>() -> App<'a, 'b> {
-  App::new(
-    crate_name!()
-  ).version(
-    crate_version!()
-  ).author(
-    crate_authors!()
-  ).about(
-    "`benchi` is a benchmarking tool."
-  ).arg(
-    Arg::with_name("force").short("-f").long("--force").help(
-      "When writing a file, overwrite if present"
-    ).default_value("off").takes_value(true// ).number_of_values(
-      // 1
-    ).validator(
-      |s| bool_validator(& s)
-    ).value_name(bool_format)
-  ).arg(
-    Arg::with_name("quiet").short("-q").long("--quiet").help(
-      "No output, except errors"
-    ).conflicts_with("verbose")
-  ).arg(
-    Arg::with_name("verbose").short("-v").long("--verb").help(
-      "Verbose output"
-    ).conflicts_with("quiet")
-  ).arg(
-    Arg::with_name("colored").short("-c").long("--color").help(
-      "Colored output"
-    ).default_value("on").takes_value(true// ).number_of_values(
-      // 1
-    ).validator(
-      |s| bool_validator(& s)
-    ).value_name(bool_format)
-  ).after_help(
-    "\
+    App::new(crate_name!())
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about("`benchi` is a benchmarking tool.")
+        .arg(
+            Arg::with_name("force")
+                .short("-f")
+                .long("--force")
+                .help("When writing a file, overwrite if present")
+                .default_value("off")
+                .takes_value(
+                    true, // ).number_of_values(
+                          // 1
+                ).validator(|s| bool_validator(&s))
+                .value_name(bool_format),
+        ).arg(
+            Arg::with_name("quiet")
+                .short("-q")
+                .long("--quiet")
+                .help("No output, except errors")
+                .conflicts_with("verbose"),
+        ).arg(
+            Arg::with_name("verbose")
+                .short("-v")
+                .long("--verb")
+                .help("Verbose output")
+                .conflicts_with("quiet"),
+        ).arg(
+            Arg::with_name("colored")
+                .short("-c")
+                .long("--color")
+                .help("Colored output")
+                .default_value("on")
+                .takes_value(
+                    true, // ).number_of_values(
+                          // 1
+                ).validator(|s| bool_validator(&s))
+                .value_name(bool_format),
+        ).after_help(
+            "\
 # Path substitutions
 
 Output paths such as `run`'s output directory or `plot`'s output file can use
 benchi's substitution mechanism. That is, occurrences of `<today>` are replaced
 with `<year>_<month>_<day>` and occurrences of `<now>` are replaced with
 `<hour>_<minute>`.
-    "
-  ).setting( AppSettings::SubcommandRequired )
+    ",
+        ).setting(AppSettings::SubcommandRequired)
 }
 
 /// Builds the `GConf` from some matches.
-pub fn gconf_of_matches<'a>(matches: & Matches<'a>) -> GConf {
-  // File overwrite.
-  let ow_files = matches.value_of("force").and_then(
-    |s| {
-      bool_of_str(& s)
-    }
-  ).expect(
-    "unreachable(force): default is provided and input validated in clap"
-  ) ;
+pub fn gconf_of_matches<'a>(matches: &Matches<'a>) -> GConf {
+    // File overwrite.
+    let ow_files = matches
+        .value_of("force")
+        .and_then(|s| bool_of_str(&s))
+        .expect("unreachable(force): default is provided and input validated in clap");
 
-  // Quiet / verbose.
-  let verb = if matches.primary_occurs("quiet") {
-    Verb::Quiet
-  } else if matches.primary_occurs("verbose") {
-    Verb::Verbose
-  } else if matches.occurs("quiet") {
-    Verb::Quiet
-  } else if matches.occurs("verbose") {
-    Verb::Verbose
-  } else {
-    Verb::Normal
-  } ;
+    // Quiet / verbose.
+    let verb = if matches.primary_occurs("quiet") {
+        Verb::Quiet
+    } else if matches.primary_occurs("verbose") {
+        Verb::Verbose
+    } else if matches.occurs("quiet") {
+        Verb::Quiet
+    } else if matches.occurs("verbose") {
+        Verb::Verbose
+    } else {
+        Verb::Normal
+    };
 
-  // Colored.
-  let colored = matches.value_of("colored").and_then(
-    |s| {
-      bool_of_str(& s)
-    }
-  ).expect(
-    "unreachable(colored): default is provided and input validated in clap"
-  ) ;
+    // Colored.
+    let colored = matches
+        .value_of("colored")
+        .and_then(|s| bool_of_str(&s))
+        .expect("unreachable(colored): default is provided and input validated in clap");
 
-  GConf::mk(verb, colored, ow_files)
+    GConf::mk(verb, colored, ow_files)
 }
 
-
-
 /// All the subcommands.
-pub fn subcommands<'a, 'b>() -> Vec< App<'a, 'b> > {
-  vec![
-    clap_run_subcommand(),
-    plot_subcommand(),
-    inspect_subcommand(),
-    conf_subcommand(),
-  ]
+pub fn subcommands<'a, 'b>() -> Vec<App<'a, 'b>> {
+    vec![
+        clap_run_subcommand(),
+        plot_subcommand(),
+        inspect_subcommand(),
+        conf_subcommand(),
+    ]
 }
 
 /// Complete clap.
 pub fn mk_clap<'a, 'b>() -> App<'a, 'b> {
-  main_app().subcommands( subcommands() )
+    main_app().subcommands(subcommands())
 }
 
 /// Clap.
-pub fn work() -> Res< Clap > {
-  let original_matches = mk_clap().get_matches() ;
+pub fn work() -> Res<Clap> {
+    let original_matches = mk_clap().get_matches();
 
-  let matches = & Matches::mk(original_matches) ;
+    let matches = &Matches::mk(original_matches);
 
-  if let Some(res) = run_clap(matches) {
-    res
-  } else if let Some(res) = plot_clap(matches) {
-    res
-  } else if let Some(res) = conf_clap(matches) {
-    res
-  } else {
-    bail!("called with unimplemented command")
-  }
+    if let Some(res) = run_clap(matches) {
+        res
+    } else if let Some(res) = plot_clap(matches) {
+        res
+    } else if let Some(res) = conf_clap(matches) {
+        res
+    } else {
+        bail!("called with unimplemented command")
+    }
 }
-
-
-
-
-
 
 /// The configuration subcommand (explanation).
 fn conf_subcommand<'a, 'b>() -> App<'a, 'b> {
-
-  SubCommand::with_name("conf").about(
-    "Explanation of the configuration file format."
-  ).before_help("\
+    SubCommand::with_name("conf")
+        .about("Explanation of the configuration file format.")
+        .before_help(
+            "\
 To run benchmarks you must provide a configuration file that describes the
 tools to run. It can also include options normally passed as command-line
 arguments (CLA), so that you can simply run `benchi run my_conf_file` (more on
@@ -387,199 +355,202 @@ details on `<today>` and `<now>`). BUT the rest of the configuration file's
 options (`-v` and `--tools`) are overriden by the CLAs, so benchi will run in
 quiet mode over 10 benchmarks in parallel, using `my_other_benchs` as the
 benchmark list file.\
-  ").arg(
-    Arg::with_name("CONF").help(
-      "\
+  ",
+        ).arg(
+            Arg::with_name("CONF")
+                .help(
+                    "\
 Dumps an example configuration file to <file.conf>, and a benchmark list file
 to <file.benchs>.\
-      "
-    ).required(true).index(1).value_name("file.conf")
-  )
+      ",
+                ).required(true)
+                .index(1)
+                .value_name("file.conf"),
+        )
 }
-
 
 /// `Conf` conf from some matches. `None` if `conf` subcommant is not present.
-pub fn conf_clap<'a>(
-  matches: & ::clap::Matches<'a>
-) -> Option< Res<Clap> > {
-  if let Some(conf_matches) = matches.subcommand_matches("conf") {
-    let conf = ::clap::gconf_of_matches(& matches) ;
-    let conf_file = conf_matches.value_of("CONF").expect(
-      "unreachable(CONF): required"
-    ).to_string() ;
-    Some(
-      Ok( Clap::Conf(conf, conf_file) )
-    )
-  } else {
-    None
-  }
+pub fn conf_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
+    if let Some(conf_matches) = matches.subcommand_matches("conf") {
+        let conf = ::clap::gconf_of_matches(&matches);
+        let conf_file = conf_matches
+            .value_of("CONF")
+            .expect("unreachable(CONF): required")
+            .to_string();
+        Some(Ok(Clap::Conf(conf, conf_file)))
+    } else {
+        None
+    }
 }
-
-
-
-
 
 #[test]
 fn clap_tmo() {
-  fn test(secs: u64, string: & str) {
-    let exp = Duration::new(secs, 0) ;
-    println!("`{}` should be parsed as {}", string, exp.as_sec_str()) ;
-    assert!( tmo_validator(string).is_ok() ) ;
-    assert_eq!( exp, tmo_of_str(string).unwrap() )
-  }
+    fn test(secs: u64, string: &str) {
+        let exp = Duration::new(secs, 0);
+        println!("`{}` should be parsed as {}", string, exp.as_sec_str());
+        assert!(tmo_validator(string).is_ok());
+        assert_eq!(exp, tmo_of_str(string).unwrap())
+    }
 
-  test(10, "10s") ;
-  test(42, "42s") ;
-  test(42 * 60, "42min") ;
+    test(10, "10s");
+    test(42, "42s");
+    test(42 * 60, "42min");
 
-  assert!( tmo_of_str("").is_err() ) ;
-  assert!( tmo_validator( "" ).is_err() ) ;
-  assert!( tmo_of_str("7").is_err() ) ;
-  assert!( tmo_validator( "7" ).is_err() ) ;
-  assert!( tmo_of_str("s").is_err() ) ;
-  assert!( tmo_validator( "s" ).is_err() ) ;
-  assert!( tmo_of_str("min").is_err() ) ;
-  assert!( tmo_validator( "min" ).is_err() ) ;
-  assert!( tmo_of_str("b42s").is_err() ) ;
-  assert!( tmo_validator( "b42s" ).is_err() ) ;
-  assert!( tmo_of_str("42 min").is_err() ) ;
-  assert!( tmo_validator( "42 min" ).is_err() ) ;
+    assert!(tmo_of_str("").is_err());
+    assert!(tmo_validator("").is_err());
+    assert!(tmo_of_str("7").is_err());
+    assert!(tmo_validator("7").is_err());
+    assert!(tmo_of_str("s").is_err());
+    assert!(tmo_validator("s").is_err());
+    assert!(tmo_of_str("min").is_err());
+    assert!(tmo_validator("min").is_err());
+    assert!(tmo_of_str("b42s").is_err());
+    assert!(tmo_validator("b42s").is_err());
+    assert!(tmo_of_str("42 min").is_err());
+    assert!(tmo_validator("42 min").is_err());
 }
-
 
 #[test]
 fn clap_fails() {
-  let clap = mk_clap() ;
+    let clap = mk_clap();
 
-  let args: Vec<& 'static str> = vec!["benchi", ] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec!["benchi", "run"] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec!["benchi", "conf"] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec!["benchi", "plot"] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec!["benchi", "plot", "file.plot"] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec!["benchi", "plot", "file.plot", "cumul"] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec![
-    "benchi", "plot", "file.plot", "compare"
-  ] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec![
-    "benchi", "plot", "file.plot", "compare", "data"
-  ] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
-  let args: Vec<& 'static str> = vec![
-    "benchi", "plot", "file.plot", "compare", "data", "data'", "data''"
-  ] ;
-  assert!( clap.clone().get_matches_from_safe(args).is_err() ) ;
+    let args: Vec<&'static str> = vec!["benchi"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "run"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "conf"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "plot"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "plot", "file.plot"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "plot", "file.plot", "cumul"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "plot", "file.plot", "compare"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec!["benchi", "plot", "file.plot", "compare", "data"];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
+    let args: Vec<&'static str> = vec![
+        "benchi",
+        "plot",
+        "file.plot",
+        "compare",
+        "data",
+        "data'",
+        "data''",
+    ];
+    assert!(clap.clone().get_matches_from_safe(args).is_err());
 }
-
 
 #[test]
 fn hierarchical_matches_and_gconf() {
-  let clap = mk_clap() ;
+    let clap = mk_clap();
 
-  let args_1 = vec!["benchi", "run", "-o", "output", "run.conf", "benchs"] ;
-  let m_1 = clap.clone().get_matches_from_safe(args_1).expect(
-    "should not fail"
-  ) ;
-  let mut m = Matches::mk(m_1) ;
-  let args_2 = vec!["benchi", "run", "-o", "blah", "blah.conf", "not benchs"] ;
-  let m_2 = clap.clone().get_matches_from_safe(args_2).expect(
-    "should not fail"
-  ) ;
-  m.push(m_2) ;
-  let conf = ::clap::gconf_of_matches(& m) ;
-  assert_eq!(
-    conf, GConf::mk(Verb::Normal, true, false)
-  ) ;
-  assert!(
-    m.subcommand_matches("run").unwrap().primary_occurs("out_dir")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("out_dir"), Some("output")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("CONF"), Some("run.conf")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("BENCHS"), Some("benchs")
-  ) ;
-  assert_eq!(
-    m.value_of("force"), Some("off")
-  ) ;
+    let args_1 = vec!["benchi", "run", "-o", "output", "run.conf", "benchs"];
+    let m_1 = clap
+        .clone()
+        .get_matches_from_safe(args_1)
+        .expect("should not fail");
+    let mut m = Matches::mk(m_1);
+    let args_2 = vec!["benchi", "run", "-o", "blah", "blah.conf", "not benchs"];
+    let m_2 = clap
+        .clone()
+        .get_matches_from_safe(args_2)
+        .expect("should not fail");
+    m.push(m_2);
+    let conf = ::clap::gconf_of_matches(&m);
+    assert_eq!(conf, GConf::mk(Verb::Normal, true, false));
+    assert!(
+        m.subcommand_matches("run")
+            .unwrap()
+            .primary_occurs("out_dir")
+    );
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("out_dir"),
+        Some("output")
+    );
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("CONF"),
+        Some("run.conf")
+    );
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("BENCHS"),
+        Some("benchs")
+    );
+    assert_eq!(m.value_of("force"), Some("off"));
 
-  let args_1 = vec!["benchi", "-f", "on", "run", "run.conf", "benchs"] ;
-  let m_1 = clap.clone().get_matches_from_safe(args_1).expect(
-    "should not fail"
-  ) ;
-  let mut m = Matches::mk(m_1) ;
-  let args_2 = vec!["benchi", "run", "-o", "output", "blah.conf"] ;
-  let m_2 = clap.clone().get_matches_from_safe(args_2).expect(
-    "should not fail"
-  ) ;
-  m.push(m_2) ;
-  let conf = ::clap::gconf_of_matches(& m) ;
-  assert_eq!(
-    conf, GConf::mk(Verb::Normal, true, true)
-  ) ;
-  assert_eq!(
-    m.value_of("force"), Some("on")
-  ) ;
-  assert!(
-    ! m.subcommand_matches("run").unwrap().primary_occurs("out_dir")
-  ) ;
-  assert!(
-    m.subcommand_matches("run").unwrap().occurs("out_dir")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("out_dir"), Some("output")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("CONF"), Some("run.conf")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("BENCHS"), Some("benchs")
-  ) ;
+    let args_1 = vec!["benchi", "-f", "on", "run", "run.conf", "benchs"];
+    let m_1 = clap
+        .clone()
+        .get_matches_from_safe(args_1)
+        .expect("should not fail");
+    let mut m = Matches::mk(m_1);
+    let args_2 = vec!["benchi", "run", "-o", "output", "blah.conf"];
+    let m_2 = clap
+        .clone()
+        .get_matches_from_safe(args_2)
+        .expect("should not fail");
+    m.push(m_2);
+    let conf = ::clap::gconf_of_matches(&m);
+    assert_eq!(conf, GConf::mk(Verb::Normal, true, true));
+    assert_eq!(m.value_of("force"), Some("on"));
+    assert!(
+        !m.subcommand_matches("run")
+            .unwrap()
+            .primary_occurs("out_dir")
+    );
+    assert!(m.subcommand_matches("run").unwrap().occurs("out_dir"));
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("out_dir"),
+        Some("output")
+    );
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("CONF"),
+        Some("run.conf")
+    );
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("BENCHS"),
+        Some("benchs")
+    );
 
-  let args_1 = vec!["benchi", "-q", "run", "run.conf"] ;
-  let m_1 = clap.clone().get_matches_from_safe(args_1).expect(
-    "should not fail"
-  ) ;
-  let mut m = Matches::mk(m_1) ;
-  let args_2 = vec![
-    "benchi", "-c", "off", "-f", "on", "run", "blah.conf", "benchs"
-  ] ;
-  let m_2 = clap.clone().get_matches_from_safe(args_2).expect(
-    "should not fail"
-  ) ;
-  m.push(m_2) ;
-  let conf = ::clap::gconf_of_matches(& m) ;
-  assert_eq!(
-    conf, GConf::mk(Verb::Quiet, false, true)
-  ) ;
-  assert_eq!(
-    m.value_of("force"), Some("on")
-  ) ;
-  assert!(
-    ! m.subcommand_matches("run").unwrap().primary_occurs("out_dir")
-  ) ;
-  assert!(
-    ! m.subcommand_matches("run").unwrap().occurs("out_dir")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("CONF"), Some("run.conf")
-  ) ;
-  assert_eq!(
-    m.value_of("colored"), Some("off")
-  ) ;
-  assert_eq!(
-    m.value_of("force"), Some("on")
-  ) ;
-  assert_eq!(
-    m.subcommand_matches("run").unwrap().value_of("BENCHS"), Some("benchs")
-  ) ;
+    let args_1 = vec!["benchi", "-q", "run", "run.conf"];
+    let m_1 = clap
+        .clone()
+        .get_matches_from_safe(args_1)
+        .expect("should not fail");
+    let mut m = Matches::mk(m_1);
+    let args_2 = vec![
+        "benchi",
+        "-c",
+        "off",
+        "-f",
+        "on",
+        "run",
+        "blah.conf",
+        "benchs",
+    ];
+    let m_2 = clap
+        .clone()
+        .get_matches_from_safe(args_2)
+        .expect("should not fail");
+    m.push(m_2);
+    let conf = ::clap::gconf_of_matches(&m);
+    assert_eq!(conf, GConf::mk(Verb::Quiet, false, true));
+    assert_eq!(m.value_of("force"), Some("on"));
+    assert!(
+        !m.subcommand_matches("run")
+            .unwrap()
+            .primary_occurs("out_dir")
+    );
+    assert!(!m.subcommand_matches("run").unwrap().occurs("out_dir"));
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("CONF"),
+        Some("run.conf")
+    );
+    assert_eq!(m.value_of("colored"), Some("off"));
+    assert_eq!(m.value_of("force"), Some("on"));
+    assert_eq!(
+        m.subcommand_matches("run").unwrap().value_of("BENCHS"),
+        Some("benchs")
+    );
 }
