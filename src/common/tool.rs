@@ -273,6 +273,7 @@ impl Row {
     where
         Conf: GConfExt,
     {
+        s.push_str(" ");
         s.push_str(&" ".repeat(max.name - self.name.len()));
         s.push_str(&conf.emph(&self.name));
 
@@ -308,11 +309,12 @@ impl Row {
         } else {
             s.push_str(&conf.bad(&self.errs));
         }
+        s.push_str(" ")
     }
 
     fn push_header_sep(s: &mut String, max: &MaxWidth) {
         s.push_str(&format!(
-            "{0:=>1$}=||={2:=>3$}=|={4:=>5$}=|={6:=>7$}=|={8:=>9$}=|={10:=>11$}",
+            "={0:=>1$}=||={2:=>3$}=|={4:=>5$}=|={6:=>7$}=|={8:=>9$}=|={10:=>11$}=",
             "",
             max.name,
             "",

@@ -267,9 +267,11 @@ impl Instance {
                         conf.sad(format!("{}", bench))
                     )
                 })?;
-            let res = kid.wait_timeout(conf.timeout)?;
-            if res.is_none() {
-                kid.kill()?;
+
+            let mut res = kid.wait_timeout(conf.timeout)?;
+
+            while res.is_none() {
+                res = kid.wait_timeout(conf.timeout)?
             }
 
             Ok(res)
