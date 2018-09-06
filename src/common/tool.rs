@@ -255,7 +255,7 @@ impl Row {
             runtime: "runtime (s)".into(),
             average: "average (s)".into(),
             solved: "solved".into(),
-            errs: "erros".into(),
+            errs: "errors".into(),
             tmos: "timeouts".into(),
         };
         let width = MaxWidth {

@@ -1,4 +1,4 @@
-options = "-v run -o test_runs -t 1s --benchs 1 --tools 1"
+options = "-v run -o test_runs -t 20s --benchs 1 --tools 1"
 
 run = [ "echo_1", "echo_2" ]
 
