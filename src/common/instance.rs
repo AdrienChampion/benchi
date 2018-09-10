@@ -127,7 +127,7 @@ impl Instance {
         self.init_validator(conf, tool)?;
         let mut path = PathBuf::new();
         path.push(&conf.out_dir);
-        path.push(&self[tool].ident());
+        path.push(&format!("{}_{}", self[tool].ident(), "data"));
         path.set_extension("toml");
         let mut tool_file = conf.open_file_writer(path.as_path()).chain_err(|| {
             format!(
