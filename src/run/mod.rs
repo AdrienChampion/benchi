@@ -95,21 +95,7 @@ impl ToolRun {
 
         assert!(!kid_cmd.is_empty());
 
-        let mut kid_cmd_iter = kid_cmd.split_whitespace();
-        let fst = if let Some(fst) = kid_cmd_iter.next() {
-            fst
-        } else {
-            bail!(
-                "illegal command for tool {}",
-                self.instance[tool_idx].ident()
-            )
-        };
-
-        let mut cmd = Command::new(fst);
-
-        cmd.args(kid_cmd_iter);
-
-        let mut cmd_str = kid_cmd.to_string();
+        let (mut cmd, mut cmd_str) = build_command(&self.conf, kid_cmd);
 
         cmd.arg(bench);
         cmd_str += " ";
@@ -706,4 +692,47 @@ impl Master {
         }
         empty
     }
+}
+
+/// Builds a command to run from a tool command.
+///
+/// Adds timeout on not windows.
+#[cfg(not(windows))]
+fn build_command(conf: &Arc<RunConf>, kid_cmd: &str) -> (Command, String) {
+    let timeout = conf.timeout.as_secs() + 1;
+    let mut cmd = Command::new("timeout");
+    cmd.arg(&format!("{}", timeout));
+    let mut cmd_str = format!("timeout {}", timeout);
+
+    for stuff in kid_cmd.split_whitespace() {
+        cmd.arg(stuff);
+        cmd_str += " ";
+        cmd_str += stuff
+    }
+    (cmd, cmd_str)
+}
+/// Builds a command to run from a tool command.
+///
+/// Adds timeout on not windows.
+#[cfg(windows)]
+fn build_command(conf: &Arc<RunConf>, kid_cmd: &str) -> (Command, String) {
+    let mut kid_cmd_iter = kid_cmd.split_whitespace();
+    let fst = if let Some(fst) = kid_cmd_iter.next() {
+        fst
+    } else {
+        bail!(
+            "illegal command for tool {}",
+            self.instance[tool_idx].ident()
+        )
+    };
+
+    let mut cmd = Command::new(fst);
+    let mut cmd_str = format!("{}", fst);
+
+    for arg in kid_cmd_iter {
+        cmd.arg(arg);
+        cmd += " ";
+        cmd_str += arg
+    }
+    (cmd, cmd_str)
 }

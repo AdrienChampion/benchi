@@ -4,6 +4,8 @@
 #![allow(non_upper_case_globals)]
 
 #[macro_use]
+extern crate error_chain;
+#[macro_use]
 extern crate benchi;
 
 use benchi::{common::run::*, common::*, run::Master};
@@ -104,6 +106,8 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
         return Ok(());
     }
 
+    check_timeout_exists(conf)?;
+
     // Create output directory if it doesn't already exist.
     mk_dir(&conf.out_dir).chain_err(|| {
         format!(
@@ -171,5 +175,37 @@ fn work(conf: &Arc<RunConf>, instance: &Arc<Instance>) -> Res<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Checks that the timeout command exists.
+///
+/// Does nothing on not windows.
+#[cfg(not(windows))]
+fn check_timeout_exists(conf: &Arc<RunConf>) -> Res<()> {
+    // Check that the timeout command exists.
+    if Command::new("timeout")
+        .arg("1")
+        .arg("echo")
+        .arg("test")
+        .stdout(::std::process::Stdio::null())
+        .stderr(::std::process::Stdio::null())
+        .stdin(::std::process::Stdio::null())
+        .status()
+        .is_err()
+    {
+        bail!(format!(
+            "could not find `{}` command, make sure it is installed",
+            conf.emph("timeout")
+        ))
+    }
+    Ok(())
+}
+
+/// Checks that the timeout command exists.
+///
+/// Does nothing on not windows.
+#[cfg(windows)]
+fn check_timeout_exists(conf: &Arc<RunConf>) -> Res<()> {
     Ok(())
 }
