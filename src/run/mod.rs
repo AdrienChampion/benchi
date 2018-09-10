@@ -95,23 +95,19 @@ impl ToolRun {
 
         assert!(!kid_cmd.is_empty());
 
-        // let mut kid_cmd_iter = kid_cmd.split_whitespace();
-        // let fst = if let Some(fst) = kid_cmd_iter.next() {
-        //     fst
-        // } else {
-        //     bail!(
-        //         "illegal command for tool {}",
-        //         self.instance[tool_idx].ident()
-        //     )
-        // };
+        let mut kid_cmd_iter = kid_cmd.split_whitespace();
+        let fst = if let Some(fst) = kid_cmd_iter.next() {
+            fst
+        } else {
+            bail!(
+                "illegal command for tool {}",
+                self.instance[tool_idx].ident()
+            )
+        };
 
-        let mut cmd = Command::new("timeout");
-        cmd.arg(&format!(
-            "{}",
-            self.conf.timeout.as_secs() + self.conf.timeout.as_secs() / 7
-        ));
-        // cmd.args(kid_cmd_iter);
-        cmd.args(kid_cmd.split_whitespace());
+        let mut cmd = Command::new(fst);
+
+        cmd.args(kid_cmd_iter);
 
         let mut cmd_str = kid_cmd.to_string();
 

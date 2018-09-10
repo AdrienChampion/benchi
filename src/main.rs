@@ -12,7 +12,7 @@ use benchi::{common::run::*, common::*, run::Master};
 fn main() {
     match ::benchi::clap::work() {
         Ok(Clap::Run(mut conf, tools)) => {
-            log!{ conf, verb =>
+            log!{ conf =>
                 "{}:", conf.emph("Configuration") ;
                 "           timeout: {}s", conf.timeout.as_secs() ;
                 "           out dir: {}", conf.happy(& conf.out_dir) ;
