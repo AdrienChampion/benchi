@@ -208,7 +208,7 @@ pub fn main_app<'a, 'b>() -> App<'a, 'b> {
                 .short("-c")
                 .long("--color")
                 .help("(De)activates colored output (inactive when not in a tty)")
-                .default_value(if ::isatty::stdout_isatty() {
+                .default_value(if ::atty::is(::atty::Stream::Stdout) {
                     "on"
                 } else {
                     "off"
