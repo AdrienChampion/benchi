@@ -534,29 +534,35 @@ pub fn example_conf_file(conf: &GConf, file: &str) -> Res<()> {
         conf.happy("benchi"), conf.emph("run"), file, bench_file ;
         "" ;
 
-        "The commands above dump data to `{}`", conf.emph(
+        "Benchi creates directories when they do not exist, but it does not overwrite files by";
+        "default. If you really want benchi to overwrite existing files, use the `-f` or";
+        "`--force`: `benchi --force on ...` or `benchi -f on ...`";
+        "";
+
+        "The commands above dump data to `{}`, where", conf.emph(
           "example/<today>_at_<now>"
         ) ;
-        "  where <today> is today's date `YYYY_MM_DD`" ;
-        "  and <now> is the current time `HH_MM`." ;
-        "" ;
+        "- <today> is today's date `YYYY_MM_DD`, and" ;
+        "- <now> is the current time `HH_MM`" ;
+        "because of the `option` field in `example.toml`. You can override this from the command";
+        "line with `-o <DIR>` or `--out_dir <DIR>` (after the `run` subcommand), and/or change it";
+        "in `example.toml`." ;
+        "";
 
         "Generate a nice cumulative plot of all the results with" ;
-        "> {} {} example/graphs/cumul.plot \
-        {} example/<today>_at_<now>/*.data",
+        "> {} {} --then open example/graphs/cumul.pdf \
+        {} example/<today>_at_<now>/*.toml",
         conf.happy("benchi"), conf.emph("plot"), conf.emph("cumul") ;
         "If you have gnuplot, benchi will generate `example/graphs/cumul.pdf` \
-        automatically." ;
+        automatically. `--then open` will open the resulting PDF with your default PDF viewer." ;
         "" ;
 
         "Or generate a comparative scatterplot between two of them with, e.g." ;
-        "> {} {} example/graphs/cmp.plot \\",
+        "> {} {} --then open example/graphs/cmp.pdf \\",
         conf.happy("benchi"), conf.emph("plot") ;
-        "         {} example/<today>_at_<now>/home_find.data",
+        "         {} example/<today>_at_<now>/parent_find.toml \\",
         conf.emph("compare") ;
-        "                 example/<today>_at_<now>/tmp_find.data" ;
-        "If you have gnuplot, benchi will generate `example/graphs/cmp.pdf` \
-        automatically." ;
+        "                 example/<today>_at_<now>/wd_find.toml" ;
         "" ;
         "Make sure to read `{}`.", conf.emph("benchi help plot")
     }

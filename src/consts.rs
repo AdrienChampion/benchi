@@ -111,23 +111,83 @@ pub static ex_conf_file: &str = r#"# Example configuration file.
 
 # Setting `run` options. Each of these options can be overriden with command-
 # line arguments.
-options: "-v run -o example/<today>_at_<now> --tools 2 --benchs 2 -t 5s"
+options = "-v run -o example/<today>_at_<now> --tools 2 --benchs 2 -t 7s"
 
 # So `benchi -q run -t 3min <this file>` overrides the verbosity setting and
 # the timeout from the options above.
 
+# The following specifies which tools are active. The tools are defined below, but only the ones
+# mentioned here will run.
+run = [ "root_find", "wd_find", "parent_find" ]
 
-# This section defines validator codes that each tool definition can use. In
-# practice, these are exit codes for validation scripts (see below).
-validators {
-  # `success` is the only kind of validator right now.
-  # It is followed by the exit code itself (`0`), an identifier to use in the
-  # validation scripts (`found_some`), and a nice name to use in the plots
-  # (`Found Some`).
-  success: 0, found_some, Found Some
-  success: 10, found_none, Found None
-  # Everything else is considered an error.
-}
+# This next section declares tools: their name(s) and how to run them.
+[tools]
+
+    # This subsection defines a tool. The name of the section (`root_find` here) will be used for
+    # file names related to this tool.
+    [tools.root_find]
+    # `cmd` is the command used to run the tool.
+    cmd = "find / -iname"
+    # `graph` is optional and specifies the name of this tool when plotting graphs.
+    graph = "find from root"
+    # The `validator` runs after the tool and checks its output/return code and other things. See
+    # below for the definition of the `check_output` validator.
+    validator = "check_output"
+
+    # Another tool, notice that this one does not have a `graph` name. Meaning graphs will use its
+    # short name: `wd_find`. (It's not going to be pretty when plotting graphs.)
+    [tools.wd_find]
+    cmd = "find . -iname"
+    validator = "check_output"
+
+    [tools.parent_find]
+    cmd = "find .. -iname"
+    graph = "Parent find"
+    validator = "check_output"
+
+    # This next tool is not active, it was not mentioned in the `run` field above.
+    [tools.tmp_find]
+    cmd = "find /tmp -iname"
+    validator = "check_output"
+
+# This next section defines validator codes that validation scripts can use (see below).
+[codes]
+found_some = { code = 0, graph = "Found None" }
+found_none = { code = 10, graph = "None" }
+timeout = { code = 20 }
+# All codes are considered *success* results, except for the special (and optional) *timeout* code.
+# It allows the validators (again, below) to force benchi to consider a result a timeout.
+# Any other code returned by validation scripts is considered an error.
+
+# This section defines validator (bash) scripts that run once a tool has finished working on a
+# benchmark and did not result in an error or a timeout.
+#
+# In addition to the validation codes defined above, validators can refer to
+# four things:
+#
+# - `$bench` the argument fed to this tool (benchmark being validated)
+# - `$code` the code the tool returned
+# - `$out` a file containing the tool's `stdout`
+# - `$err` a file containing the tool's `stderr`
+#
+# A tool's validator becomes a bash script located at
+# `<out/dir>/<tool_short_name>/validator.sh`
+[validators]
+
+check_output = '''
+code="$found_none"
+while read a_file ; do
+  if [ -f $a_file ] \
+  || [ -d $a_file ] ; then
+    code="$found_some"
+    break
+  else
+    exit 2
+  fi
+done < $out
+exit $code
+'''
+
 # NB: this example makes little sense, running it will most likely trigger
 # warnings because some `tools` will disagree on the validation codes.
 #
@@ -135,91 +195,6 @@ validators {
 # agree on the result. But in this example, we're running `find` in different
 # directories which, again, makes little sense.
 
-
-find at root {
-  short: root_find
-  graph: Find at Root
-  cmd: "find / -iname"
-
-  # In addition to the validation codes defined above, validators can refer to
-  # four things:
-  #
-  # - `$bench` the argument fed to this tool (benchmark being validated)
-  # - `$code` the code the tool returned
-  # - `$out` a file containing the tool's `stdout`
-  # - `$err` a file containing the tool's `stderr`
-  #
-  # A tool's validator becomes a bash script located at
-  # `<out/dir>/<tool_short_name>/validator.sh`
-  validator: ```
-code="$found_none"
-while read a_file ; do
-  if [ -f $a_file ] \
-  || [ -d $a_file ] ; then
-    code="$found_some"
-  else
-    exit 2
-  fi
-done < $out
-exit $code
-  ```
-}
-
-Find in Current Directory {
-  short: curr_dir_find
-  # Graph name is optional, none provided here so benchi will use the 'name'
-  # of the tool instead: `Find in Current Directory` here.
-  cmd: "find . -iname"
-
-  # Validators cannot be factored out for multiple tools to use yet, create an
-  # issue if you're interested in this feature!
-  validator: ```
-code="$found_none"
-while read a_file ; do
-  if [ -f $a_file ] \
-  || [ -d $a_file ] ; then
-    code="$found_some"
-  else
-    exit 2
-  fi
-done < $out
-exit $code
-  ```
-}
-
-Find in Tmp {
-  short: tmp_find
-  cmd: "find /tmp -iname"
-  validator: ```
-code="$found_none"
-while read a_file ; do
-  if [ -f $a_file ] \
-  || [ -d $a_file ] ; then
-    code="$found_some"
-  else
-    exit 2
-  fi
-done < $out
-exit $code
-  ```
-}
-
-Find in Home {
-  short: home_find
-  cmd: "find /home -iname"
-  validator: ```
-code="$found_none"
-while read a_file ; do
-  if [ -f $a_file ] \
-  || [ -d $a_file ] ; then
-    code="$found_some"
-  else
-    exit 2
-  fi
-done < $out
-exit $code
-  ```
-}
 "#;
 
 /// Example benchmark file.

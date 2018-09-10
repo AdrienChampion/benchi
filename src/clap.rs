@@ -363,12 +363,12 @@ benchmark list file.\
             Arg::with_name("CONF")
                 .help(
                     "\
-Dumps an example configuration file to <file.conf>, and a benchmark list file
+Dumps an example configuration file to <file.toml>, and a benchmark list file
 to <file.benchs>.\
       ",
                 ).required(true)
                 .index(1)
-                .value_name("file.conf"),
+                .value_name("file.toml"),
         )
 }
 
@@ -449,13 +449,13 @@ fn clap_fails() {
 fn hierarchical_matches_and_gconf() {
     let clap = new_clap();
 
-    let args_1 = vec!["benchi", "run", "-o", "output", "run.conf", "benchs"];
+    let args_1 = vec!["benchi", "run", "-o", "output", "run.toml", "benchs"];
     let m_1 = clap
         .clone()
         .get_matches_from_safe(args_1)
         .expect("should not fail");
     let mut m = Matches::new(m_1);
-    let args_2 = vec!["benchi", "run", "-o", "blah", "blah.conf", "not benchs"];
+    let args_2 = vec!["benchi", "run", "-o", "blah", "blah.toml", "not benchs"];
     let m_2 = clap
         .clone()
         .get_matches_from_safe(args_2)
@@ -474,7 +474,7 @@ fn hierarchical_matches_and_gconf() {
     );
     assert_eq!(
         m.subcommand_matches("run").unwrap().value_of("CONF"),
-        Some("run.conf")
+        Some("run.toml")
     );
     assert_eq!(
         m.subcommand_matches("run").unwrap().value_of("BENCHS"),
@@ -482,13 +482,13 @@ fn hierarchical_matches_and_gconf() {
     );
     assert_eq!(m.value_of("force"), Some("off"));
 
-    let args_1 = vec!["benchi", "-f", "on", "run", "run.conf", "benchs"];
+    let args_1 = vec!["benchi", "-f", "on", "run", "run.toml", "benchs"];
     let m_1 = clap
         .clone()
         .get_matches_from_safe(args_1)
         .expect("should not fail");
     let mut m = Matches::new(m_1);
-    let args_2 = vec!["benchi", "run", "-o", "output", "blah.conf"];
+    let args_2 = vec!["benchi", "run", "-o", "output", "blah.toml"];
     let m_2 = clap
         .clone()
         .get_matches_from_safe(args_2)
@@ -509,14 +509,14 @@ fn hierarchical_matches_and_gconf() {
     );
     assert_eq!(
         m.subcommand_matches("run").unwrap().value_of("CONF"),
-        Some("run.conf")
+        Some("run.toml")
     );
     assert_eq!(
         m.subcommand_matches("run").unwrap().value_of("BENCHS"),
         Some("benchs")
     );
 
-    let args_1 = vec!["benchi", "-q", "run", "run.conf"];
+    let args_1 = vec!["benchi", "-q", "run", "run.toml"];
     let m_1 = clap
         .clone()
         .get_matches_from_safe(args_1)
@@ -529,7 +529,7 @@ fn hierarchical_matches_and_gconf() {
         "-f",
         "on",
         "run",
-        "blah.conf",
+        "blah.toml",
         "benchs",
     ];
     let m_2 = clap
@@ -548,7 +548,7 @@ fn hierarchical_matches_and_gconf() {
     assert!(!m.subcommand_matches("run").unwrap().occurs("out_dir"));
     assert_eq!(
         m.subcommand_matches("run").unwrap().value_of("CONF"),
-        Some("run.conf")
+        Some("run.toml")
     );
     assert_eq!(m.value_of("colored"), Some("off"));
     assert_eq!(m.value_of("force"), Some("on"));
