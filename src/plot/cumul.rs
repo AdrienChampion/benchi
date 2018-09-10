@@ -226,7 +226,7 @@ fn check(conf: &PlotConf, run_res: &RunRes) {
         }
 
         if let Some((tool, others)) = disagree {
-            let mut tail = format!("{}", conf.bad(tool));
+            let mut tail = conf.bad(tool).to_string();
             for other in others {
                 tail += ", ";
                 tail += &conf.bad(other)
@@ -252,7 +252,7 @@ fn check(conf: &PlotConf, run_res: &RunRes) {
 
         for tool in tools {
             if let Some(c) = tool.benchs.get(index).and_then(|res| res.code()) {
-                if code.get_or_insert((c, tool.tool.ident())).0 != c {
+                if codes.is_succ_code(c) && code.get_or_insert((c, tool.tool.ident())).0 != c {
                     disagree.push((c, tool.tool.ident()))
                 }
             }
@@ -267,7 +267,7 @@ fn check(conf: &PlotConf, run_res: &RunRes) {
                     codes
                         .get(code)
                         .map(|info| info.graph.clone())
-                        .unwrap_or("?".to_string())
+                        .unwrap_or_else(|| "?".to_string())
                 );
                 for (code, tool) in disagree {
                     blah += &format!(
@@ -277,7 +277,7 @@ fn check(conf: &PlotConf, run_res: &RunRes) {
                         codes
                             .get(code)
                             .map(|info| info.graph.clone())
-                            .unwrap_or("?".to_string())
+                            .unwrap_or_else(|| "?".to_string())
                     );
                 }
                 warn! { conf =>

@@ -153,6 +153,7 @@ impl CodeInfos {
             }
             writeln!(w, "{}=\"{}\"", info.name, code)?
         }
+        writeln!(w)?;
 
         Ok(())
     }
@@ -160,7 +161,30 @@ impl CodeInfos {
     /// True if the code is register as a success.
     pub fn is_succ(&self, status: ExitStatus) -> bool {
         if let Some(code) = status.code() {
-            self.codes.contains_key(&code)
+            self.is_succ_code(code)
+        } else {
+            false
+        }
+    }
+
+    /// True if the code is register as a success.
+    pub fn is_succ_code(&self, code: Code) -> bool {
+        self.codes.contains_key(&code)
+    }
+
+    /// True if the code is register as a timeout.
+    pub fn is_tmo(&self, status: ExitStatus) -> bool {
+        if let Some(code) = status.code() {
+            self.is_tmo_code(code)
+        } else {
+            false
+        }
+    }
+
+    /// True if the code is register as a timeout.
+    pub fn is_tmo_code(&self, code: Code) -> bool {
+        if let Some((c, _)) = &self.tmo {
+            *c == code
         } else {
             false
         }

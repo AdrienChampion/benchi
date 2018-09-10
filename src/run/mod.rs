@@ -95,18 +95,23 @@ impl ToolRun {
 
         assert!(!kid_cmd.is_empty());
 
-        let mut kid_cmd_iter = kid_cmd.split_whitespace();
-        let fst = if let Some(fst) = kid_cmd_iter.next() {
-            fst
-        } else {
-            bail!(
-                "illegal command for tool {}",
-                self.instance[tool_idx].ident()
-            )
-        };
+        // let mut kid_cmd_iter = kid_cmd.split_whitespace();
+        // let fst = if let Some(fst) = kid_cmd_iter.next() {
+        //     fst
+        // } else {
+        //     bail!(
+        //         "illegal command for tool {}",
+        //         self.instance[tool_idx].ident()
+        //     )
+        // };
 
-        let mut cmd = Command::new(fst);
-        cmd.args(kid_cmd_iter);
+        let mut cmd = Command::new("timeout");
+        cmd.arg(&format!(
+            "{}",
+            self.conf.timeout.as_secs() + self.conf.timeout.as_secs() / 7
+        ));
+        // cmd.args(kid_cmd_iter);
+        cmd.args(kid_cmd.split_whitespace());
 
         let mut cmd_str = kid_cmd.to_string();
 
@@ -132,10 +137,9 @@ impl ToolRun {
 
         use wait_timeout::ChildExt;
 
-        let mut status = kid
-            .wait_timeout(self.conf.timeout)
-            .chain_err(|| format!("while waiting for `{}`", cmd_str))?;
+        let res = kid.wait_timeout(self.conf.timeout + Duration::new(2, 0));
         let time = Instant::now() - start;
+        let mut status = res.chain_err(|| format!("while waiting for `{}`", cmd_str))?;
         let mut timeout = time >= self.conf.timeout;
 
         let (status, timeout) = {
@@ -151,6 +155,8 @@ impl ToolRun {
 
         if timeout {
             Ok(BenchRes::Timeout(status))
+        } else if !status.success() {
+            Ok(BenchRes::Error(time, status))
         } else {
             let status = if let Some(vald_status) = self
                 .instance
@@ -163,6 +169,8 @@ impl ToolRun {
 
             if self.conf.codes().is_succ(status) {
                 Ok(BenchRes::Success(time, status))
+            } else if self.conf.codes().is_tmo(status) {
+                Ok(BenchRes::Timeout(status))
             } else {
                 Ok(BenchRes::Error(time, status))
             }
