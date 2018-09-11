@@ -22,6 +22,7 @@ extern crate wait_timeout;
 #[macro_use]
 extern crate mylib;
 extern crate atty;
+extern crate open;
 
 pub mod consts;
 pub mod errors;

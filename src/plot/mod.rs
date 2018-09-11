@@ -32,22 +32,32 @@ pub fn run_stuff(conf: &PlotConf, final_file: &str) -> Res<()> {
         }
 
         if let Some(ref cmd) = conf.then {
-            log!{ conf, verb =>
-              "  running `{} {}`...", conf.emph(cmd), conf.emph(& final_file)
-            }
-            let status = Command::new(cmd).arg(&final_file).status().chain_err(|| {
-                format!(
-                    "while running `{} {}` (user-provided command)",
-                    conf.emph(cmd),
-                    conf.emph(&final_file)
-                )
-            })?;
-            if !status.success() {
-                bail!(format!(
-                    "failure on user-provided command `{} {}`",
-                    conf.emph(cmd),
-                    conf.emph(&final_file)
-                ))
+            if cmd == "open" {
+                log! { conf, verb =>
+                    "  opening {}", conf.emph(& final_file)
+                }
+                let failed = ::open::that(&final_file).is_err();
+                if failed {
+                    bail!(format!("could not open file {}...", conf.bad(&final_file)))
+                }
+            } else {
+                log!{ conf, verb =>
+                    "  running `{} {}`...", conf.emph(cmd), conf.emph(& final_file)
+                }
+                let status = Command::new(cmd).arg(&final_file).status().chain_err(|| {
+                    format!(
+                        "while running `{} {}` (user-provided command)",
+                        conf.emph(cmd),
+                        conf.emph(&final_file)
+                    )
+                })?;
+                if !status.success() {
+                    bail!(format!(
+                        "failure on user-provided command `{} {}`",
+                        conf.emph(cmd),
+                        conf.emph(&final_file)
+                    ))
+                }
             }
         }
     }

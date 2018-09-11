@@ -34,3 +34,4 @@ toml = "*"
 wait-timeout = "*"
 atty = "*"
 mylib = { git = "https://github.com/AdrienChampion/mylib" }
+open = "*"

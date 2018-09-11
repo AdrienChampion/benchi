@@ -32,21 +32,37 @@ pub fn work(conf: &PlotConf, files: Vec<String>) -> Res<Option<String>> {
     let mut tool_data = Vec::with_capacity(run_res.tools.len());
     let mut empty_data = vec![];
     let mut bench_count = 0;
+    let mut timeout: Option<(Duration, &str)> = None;
 
     for tool_res in &run_res.tools {
         let count = tool_res.write_cumul(conf)?;
         if count == 0 {
-            warn!(
-        conf =>
-          "ignoring data for `{}`: everything is timeout or error",
-          conf.sad( tool_res.tool.ident() )
-      );
+            warn! { conf =>
+                "ignoring data for `{}`: everything is timeout or error",
+                conf.sad( tool_res.tool.ident() )
+            }
             empty_data.push(tool_res)
         } else {
             bench_count = ::std::cmp::max(bench_count, count);
             tool_data.push(tool_res)
         }
+        timeout = if let Some((tmo, name)) = timeout {
+            if tmo != tool_res.timeout {
+                warn! { conf =>
+                    "tool {} ran with timeout {}s while tool {} ran with {}s",
+                    conf.sad(name), conf.bad(& tmo.as_sec_str()),
+                    conf.sad(tool_res.tool.graph_name()), conf.bad(& tool_res.timeout.as_sec_str())
+                }
+            }
+            Some((tmo, name))
+        } else {
+            Some((tool_res.timeout, tool_res.tool.graph_name()))
+        }
     }
+
+    let timeout = timeout
+        .map(|(tmo, _)| tmo)
+        .unwrap_or_else(|| Duration::new(0, 0));
 
     if tool_data.is_empty() {
         warn!(
@@ -99,11 +115,12 @@ pub fn work(conf: &PlotConf, files: Vec<String>) -> Res<Option<String>> {
             format!(
                 r#"
 set xlabel "Benchmarks passed (of {})" textcolor rgbcolor "0x000000"
-set ylabel "Time in seconds (logscale)" textcolor rgbcolor "0x000000"
+set ylabel "Time in seconds (logscale, timeout {}s)" textcolor rgbcolor "0x000000"
 
 
 "#,
-                run_res.benchs.len()
+                run_res.benchs.len(),
+                timeout.as_secs()
             ).as_bytes(),
         )
     }).and_then(|()| dump_linestyles(&mut file, bench_count))
