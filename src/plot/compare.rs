@@ -17,7 +17,7 @@ pub fn work(conf: &PlotConf, file_1: &str, file_2: &str) -> Res<Option<String>> 
     let min_time = data.get_min_time();
 
     let mut not_in_res_2 = vec![];
-    let (mut dble_tmos, mut dble_errs) = (0, 0);
+    // let (mut dble_tmos, mut dble_errs) = (0, 0);
 
     let (res_1_name, res_2_name) = (data.res_1.tool.ident(), data.res_2.tool.ident());
 
@@ -25,11 +25,11 @@ pub fn work(conf: &PlotConf, file_1: &str, file_2: &str) -> Res<Option<String>> 
 
     for (bench, bench_res_1) in data.res_1.benchs.drain() {
         if let Some(bench_res_2) = data.res_2.benchs.remove(&bench) {
-            if bench_res_1.is_tmo() && bench_res_2.is_tmo() {
-                dble_tmos += 1
-            } else if bench_res_1.is_err() && bench_res_2.is_err() {
-                dble_errs += 1
-            }
+            // if bench_res_1.is_tmo() && bench_res_2.is_tmo() {
+            //     dble_tmos += 1
+            // } else if bench_res_1.is_err() && bench_res_2.is_err() {
+            //     dble_errs += 1
+            // }
             let code = if conf.merge {
                 None
             } else {
@@ -149,17 +149,18 @@ pub fn work(conf: &PlotConf, file_1: &str, file_2: &str) -> Res<Option<String>> 
         )
     })?;
 
-    let title = if dble_tmos + dble_errs > 0 && conf.title {
-        format!(
-            "set title '{} double timeout{}, {} double error{}' font ',13'\n\n",
-            dble_tmos,
-            if dble_tmos == 1 { "" } else { "s" },
-            dble_errs,
-            if dble_errs == 1 { "" } else { "s" },
-        )
-    } else {
-        "".into()
-    };
+    let title = "".to_string();
+    // if dble_tmos + dble_errs > 0 && conf.title {
+    //     format!(
+    //         "set title '{} double timeout{}, {} double error{}' font ',13'\n\n",
+    //         dble_tmos,
+    //         if dble_tmos == 1 { "" } else { "s" },
+    //         dble_errs,
+    //         if dble_errs == 1 { "" } else { "s" },
+    //     )
+    // } else {
+    //     "".into()
+    // };
 
     let (vert_err_line, horz_err_line, max_range) = if !has_errs {
         (
@@ -211,11 +212,6 @@ set yrange [{}:{}]
 set arrow from {}, graph 0 to {}, graph 1 nohead ls 2
 {}
 
-set lmargin at screen 0.14 ;
-set rmargin at screen 0.95 ;
-set bmargin at screen 0.12 ;
-set tmargin at screen {} ;
-
 plot \\
   {} t 'Timeout' with lines ls 2, \\{}
   x notitle with lines ls 1\
@@ -235,7 +231,6 @@ plot \\
                 tmo_time.as_sec_str(),
                 tmo_time.as_sec_str(),
                 vert_err_line,
-                if title.is_empty() { "0.95" } else { "0.90" },
                 tmo_time.as_sec_str(),
                 horz_err_line,
                 // data_file_path.to_string_lossy()

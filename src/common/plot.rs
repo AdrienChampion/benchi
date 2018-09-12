@@ -12,8 +12,6 @@ pub struct PlotConf {
     pub then: Option<String>,
     /// Gnuplot format (terminal).
     pub fmt: PlotFmt,
-    /// Generate title?
-    pub title: bool,
     /// Ignore errors?
     pub no_errors: bool,
     /// Consider errors as timeout?
@@ -83,7 +81,6 @@ impl PlotConf {
             gnuplot,
             then,
             fmt,
-            title: true,
             no_errors: false,
             errs_as_tmos: false,
             merge: false,
@@ -91,10 +88,6 @@ impl PlotConf {
         })
     }
 
-    /// Sets the flag for title generation.
-    fn set_title(&mut self, b: bool) {
-        self.title = b
-    }
     /// Sets the flag for ignoring errors.
     fn set_no_errors(&mut self, b: bool) {
         self.no_errors = b
@@ -188,11 +181,7 @@ impl PlotFmt {
                 "\
                  set term pdf enhanced dashed \
                  font \"Helvetica,15\" background rgb \"0xFFFFFF\" \
-                 size 3.1,3 ;\n\n\
-                 set lmargin at screen 0.14 ;\n\
-                 set rmargin at screen 0.95 ;\n\
-                 set bmargin at screen 0.12 ;\n\
-                 set tmargin at screen 0.95 ;\
+                 size 3,3 ;\n\n\
                  "
             }
             PlotFmt::Svg => {
@@ -284,23 +273,10 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
                 ).validator(|s| bool_validator(&s))
                 .value_name(bool_format),
         ).arg(
-            Arg::with_name("title")
-                .long("--title")
-                .help("(de)activates the title of the plot")
-                .default_value("on")
-                .takes_value(
-                    true, // ).number_of_values(
-                          // 1
-                ).validator(|s| bool_validator(&s))
-                .value_name(bool_format),
-        ).arg(
             Arg::with_name("no_errors")
                 .long("--no_errs")
-                .help(
-                    "\
-                     Completely ignore benchmarks for which at least one tool returned an error\
-                     ",
-                ).default_value("off")
+                .help("Completely ignore benchmarks for which at least one tool returned an error")
+                .default_value("off")
                 .takes_value(
                     true, // ).number_of_values(
                           // 1
@@ -309,11 +285,8 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
         ).arg(
             Arg::with_name("merge")
                 .long("--merge")
-                .help(
-                    "\
-                     Ignore validators, plot everything together\
-                     ",
-                ).default_value("off")
+                .help("Ignore validators, plot everything together")
+                .default_value("off")
                 .takes_value(
                     true, // ).number_of_values(
                           // 1
@@ -322,11 +295,8 @@ pub fn plot_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
         ).arg(
             Arg::with_name("errs_as_tmos")
                 .long("--errs_as_tmos")
-                .help(
-                    "\
-                     Consider errors as timeouts\
-                     ",
-                ).default_value("off")
+                .help("Consider errors as timeouts")
+                .default_value("off")
                 .takes_value(
                     true, // ).number_of_values(
                           // 1
@@ -383,12 +353,6 @@ pub fn plot_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
                 .expect("unreachable(plot:run_gp): default provided"),
         ).expect("unreachable(plot:run_gp): input validated in clap");
 
-        let title = bool_of_str(
-            plot_matches
-                .value_of("title")
-                .expect("unreachable(plot:title): default provided"),
-        ).expect("unreachable(plot:title): input validated in clap");
-
         let no_errors = bool_of_str(
             plot_matches
                 .value_of("no_errors")
@@ -424,7 +388,6 @@ pub fn plot_clap<'a>(matches: &::clap::Matches<'a>) -> Option<Res<Clap>> {
             Err(e) => return Some(Err(e)),
         };
 
-        plot_conf.set_title(title);
         plot_conf.set_no_errors(no_errors);
         plot_conf.set_errs_as_tmos(errs_as_tmos);
         plot_conf.set_merge(merge);
