@@ -1,19 +1,15 @@
 //! Parser used by `benchi`.
 
-use std::str::from_utf8 ;
+use std::str::from_utf8;
 
-use regex::Regex ;
-use nom::{ IResult, multispace } ;
+use nom::*;
+use regex::Regex;
 
-use errors::* ;
-use common::* ;
-use common::res::* ;
-use consts::{ data, dump } ;
-
+prelude!(common::res::*, consts::{data, dump});
 
 /// Empty result, used as the rest for some parser results.
 #[cfg(test)]
-static nothing: [ u8 ; 0 ] = [] ;
+static nothing: [u8; 0] = [];
 
 /// Checks that a parser is successful on some input.
 #[cfg(test)]
@@ -39,119 +35,113 @@ macro_rules! test_success {
   }) ;
 }
 
-
-
 /// Tool configuration builder.
 #[derive(Clone, Debug)]
 pub struct ToolConfBuilder {
-  name: String,
-  short: Option<String>,
-  graph: Option<String>,
-  cmd: Option< Vec<String> >,
-  validator: Option<String>,
+    name: String,
+    short: Option<String>,
+    graph: Option<String>,
+    cmd: Option<Vec<String>>,
+    validator: Option<String>,
 }
 impl ToolConfBuilder {
-  /// Builder from a name.
-  pub fn of_name(name: String) -> Self {
-    ToolConfBuilder {
-      name, short: None, graph: None, cmd: None, validator: None
+    /// Builder from a name.
+    pub fn of_name(name: String) -> Self {
+        ToolConfBuilder {
+            name,
+            short: None,
+            graph: None,
+            cmd: None,
+            validator: None,
+        }
     }
-  }
-  /// Sets the short name.
-  pub fn set_short(& mut self, short: String) -> Res<()> {
-    if let Some(ref old) = self.short {
-      bail!(
-        format!(
-          "trying to set the short name for {} twice: `{}` and `{}`",
-          self.name, old, short
-        )
-      )
-    } else {
-      self.short = Some(short) ;
-      Ok(())
+    /// Sets the short name.
+    pub fn set_short(&mut self, short: String) -> Res<()> {
+        if let Some(ref old) = self.short {
+            bail!(format!(
+                "trying to set the short name for {} twice: `{}` and `{}`",
+                self.name, old, short
+            ))
+        } else {
+            self.short = Some(short);
+            Ok(())
+        }
     }
-  }
-  /// Sets the graph name.
-  pub fn set_graph(& mut self, graph: String) -> Res<()> {
-    if let Some(ref old) = self.graph {
-      bail!(
-        format!(
-          "trying to set the graph name for {} twice: `{}` and `{}`",
-          self.name, old, graph
-        )
-      )
-    } else {
-      self.graph = Some(graph) ;
-      Ok(())
+    /// Sets the graph name.
+    pub fn set_graph(&mut self, graph: String) -> Res<()> {
+        if let Some(ref old) = self.graph {
+            bail!(format!(
+                "trying to set the graph name for {} twice: `{}` and `{}`",
+                self.name, old, graph
+            ))
+        } else {
+            self.graph = Some(graph);
+            Ok(())
+        }
     }
-  }
-  /// Sets the command name.
-  pub fn set_cmd(& mut self, cmd: Vec<String>) -> Res<()> {
-    if let Some(_) = self.cmd {
-      bail!(
-        format!(
-          "trying to set the command for {} twice", self.name
-        )
-      )
-    } else {
-      self.cmd = Some(cmd) ;
-      Ok(())
+    /// Sets the command name.
+    pub fn set_cmd(&mut self, cmd: Vec<String>) -> Res<()> {
+        if let Some(_) = self.cmd {
+            bail!(format!("trying to set the command for {} twice", self.name))
+        } else {
+            self.cmd = Some(cmd);
+            Ok(())
+        }
     }
-  }
-  /// Sets the validator name.
-  pub fn set_validator(& mut self, validator: String) -> Res<()> {
-    if let Some(_) = self.validator {
-      bail!(
-        format!(
-          "trying to set the validator for {} twice", self.name
-        )
-      )
-    } else {
-      self.validator = Some(validator) ;
-      Ok(())
+    /// Sets the validator name.
+    pub fn set_validator(&mut self, validator: String) -> Res<()> {
+        if let Some(_) = self.validator {
+            bail!(format!(
+                "trying to set the validator for {} twice",
+                self.name
+            ))
+        } else {
+            self.validator = Some(validator);
+            Ok(())
+        }
     }
-  }
 
-  /// Extracts a tool configuration.
-  pub fn to_conf(self) -> Res<ToolConf> {
-    let name = self.name ;
-    let short = self.short.ok_or_else::<Error, _>(
-      || format!("no short name given for `{}`", name).into()
-    ) ? ;
-    let graph = if let Some(graph) = self.graph { graph } else {
-      name.clone()
-    } ;
-    let cmd = self.cmd.ok_or_else::<Error, _>(
-      || format!("no command given for `{}`", name).into()
-    ) ? ;
-    let validator = self.validator ;
-    Ok(
-      ToolConf { name, short, graph, cmd, validator }
-    )
-  }
+    /// Extracts a tool configuration.
+    pub fn to_conf(self) -> Res<ToolConf> {
+        let name = self.name;
+        let short = self
+            .short
+            .ok_or_else::<Error, _>(|| format!("no short name given for `{}`", name).into())?;
+        let graph = if let Some(graph) = self.graph {
+            graph
+        } else {
+            name.clone()
+        };
+        let cmd = self
+            .cmd
+            .ok_or_else::<Error, _>(|| format!("no command given for `{}`", name).into())?;
+        let validator = self.validator;
+        Ok(ToolConf {
+            name,
+            short,
+            graph,
+            cmd,
+            validator,
+        })
+    }
 }
 
-named!{
+nom::named! {
   #[doc = "Comment parser."],
   comment, re_bytes_find!(r"^#[^\n]*\n*")
 }
 
-
-
-
-
-
 #[test]
 fn t_spc_cmt() {
-  test_success!{
-    spc_cmt "#   " => () ;
-    spc_cmt "  \t#   " => () ;
-    spc_cmt "  \t#  \n " => () ;
-    spc_cmt "  \t#  \n       blah" => "blah", () ;
-  }
+    test_success! {
+      spc_cmt "#   " => () ;
+      spc_cmt "  \t#   " => () ;
+      spc_cmt "  \t#  \n " => () ;
+      spc_cmt "  \t#  \n       blah" => "blah", () ;
+    }
 }
 
-named!{
+nom::named! {
   #[doc = "Space and comments parser"],
   spc_cmt<()>, map!(
     many0!(
@@ -162,21 +152,15 @@ named!{
   )
 }
 
-
-
-
-
-
-
 #[test]
 fn t_ident() {
-  test_success!{
-    ident "blah" => "blah".to_string() ;
-    ident "bl7_ah" => "bl7_ah".to_string() ;
-  }
+    test_success! {
+      ident "blah" => "blah".to_string() ;
+      ident "bl7_ah" => "bl7_ah".to_string() ;
+    }
 }
 
-named!{
+nom::named! {
   #[doc = "Ident parser."],
   ident<String>, map_res!(
     re_bytes_find!(r"^[a-zA-Z][a-zA-Z0-9_]*"),
@@ -184,35 +168,30 @@ named!{
   )
 }
 
-
-
-
-
-
 #[test]
 fn t_string() {
-  test_success!{
-    string "blah" => "blah".to_string() ;
-    string "anything &]+)=[]![+)&[]+'\t |?^`8%~" =>
-      "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ;
-    string "     the   string gets cropped \t  " =>
-      "the   string gets cropped".to_string() ;
-    string "anything but# pound sign" =>
-      "# pound sign", "anything but".to_string() ;
-    string "anything but\n new line" =>
-      "\n new line", "anything but".to_string() ;
-    string "anything but\" double quote" =>
-      "\" double quote", "anything but".to_string() ;
-    string "anything but{ curly brace" =>
-      "{ curly brace", "anything but".to_string() ;
-    string "anything but} curly brace" =>
-      "} curly brace", "anything but".to_string() ;
-    string "anything but} curly brace" =>
-      "} curly brace", "anything but".to_string() ;
-  }
+    test_success! {
+      string "blah" => "blah".to_string() ;
+      string "anything &]+)=[]![+)&[]+'\t |?^`8%~" =>
+        "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ;
+      string "     the   string gets cropped \t  " =>
+        "the   string gets cropped".to_string() ;
+      string "anything but# pound sign" =>
+        "# pound sign", "anything but".to_string() ;
+      string "anything but\n new line" =>
+        "\n new line", "anything but".to_string() ;
+      string "anything but\" double quote" =>
+        "\" double quote", "anything but".to_string() ;
+      string "anything but{ curly brace" =>
+        "{ curly brace", "anything but".to_string() ;
+      string "anything but} curly brace" =>
+        "} curly brace", "anything but".to_string() ;
+      string "anything but} curly brace" =>
+        "} curly brace", "anything but".to_string() ;
+    }
 }
 
-named!{
+nom::named! {
   #[doc = r#"Unquoted string parser. Parses anything but `#\n{}"`."#],
   string<String>, map_res!(
     re_bytes_find!(r#"^[^#\n{}"]+"#),
@@ -222,33 +201,27 @@ named!{
   )
 }
 
-
-
-
-
-
-
 #[test]
 fn t_quoted_string() {
-  test_success!{
-    quoted_string "\"blah\"" =>
-      vec![ "blah".to_string() ] ;
-    quoted_string "\"anything &]+)=[]![+)&[]+'\t |?^`8%~\"" =>
-      vec![ "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ] ;
-    quoted_string "\"stops at\" double quote\"" =>
-      " double quote\"", vec![ "stops at".to_string() ] ;
-    quoted_string "\"     the   string gets cropped \t  \"" =>
-      vec![ "the   string gets cropped".to_string() ] ;
-    quoted_string "\"  multi lines  \n is fine\nand cropped\t \t\"" =>
-      vec![
-        "multi lines".to_string(),
-        "is fine".to_string(),
-        "and cropped".to_string(),
-      ] ;
-  }
+    test_success! {
+      quoted_string "\"blah\"" =>
+        vec![ "blah".to_string() ] ;
+      quoted_string "\"anything &]+)=[]![+)&[]+'\t |?^`8%~\"" =>
+        vec![ "anything &]+)=[]![+)&[]+'\t |?^`8%~".to_string() ] ;
+      quoted_string "\"stops at\" double quote\"" =>
+        " double quote\"", vec![ "stops at".to_string() ] ;
+      quoted_string "\"     the   string gets cropped \t  \"" =>
+        vec![ "the   string gets cropped".to_string() ] ;
+      quoted_string "\"  multi lines  \n is fine\nand cropped\t \t\"" =>
+        vec![
+          "multi lines".to_string(),
+          "is fine".to_string(),
+          "and cropped".to_string(),
+        ] ;
+    }
 }
 
-named!{
+nom::named! {
   #[doc = r#"Quoted string parser, parses anything but `"`."#],
   quoted_string< Vec<String> >, delimited!(
     char!('"'),
@@ -266,22 +239,19 @@ named!{
   )
 }
 
-
-
-
 #[test]
 fn t_raw_string() {
-  test_success!{
-    raw_string "``````" => "".to_string() ;
-    raw_string "```yeah```" => "yeah".to_string() ;
-    raw_string "```   something\n\nsomething else :)#  ```" =>
-      "   something\n\nsomething else :)#  ".to_string() ;
-    raw_string r#"``` everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% ```"# =>
-      r#" everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% "#.to_string() ;
-  }
+    test_success! {
+      raw_string "``````" => "".to_string() ;
+      raw_string "```yeah```" => "yeah".to_string() ;
+      raw_string "```   something\n\nsomething else :)#  ```" =>
+        "   something\n\nsomething else :)#  ".to_string() ;
+      raw_string r#"``` everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% ```"# =>
+        r#" everything goes %756342[!})*={![&#&$!&[{(]/\|^?_Z'"" :)# ,.p;,;:<P'j`%~786% "#.to_string() ;
+    }
 }
 
-named!{
+nom::named! {
   #[doc = "Raw string parser."],
   raw_string<String>, map_res!(
     do_parse!(
@@ -292,8 +262,7 @@ named!{
   )
 }
 
-
-named!{
+nom::named! {
   #[doc = "Parses some options."],
   options< Vec<String> >, preceded!(
     do_parse!(
@@ -306,250 +275,207 @@ named!{
   )
 }
 
-
-
-/// Parses a signed integer.
-named!{
-  signed_int< Res<i32> >, do_parse!(
-    sign: opt!( char!('-') ) >>
-    spc_cmt >>
-    num: re_bytes_find!( r"^[0-9][0-9]*" ) >> (
-      from_utf8(num).chain_err(
-        || format!("non utf8 string during signed int parsing")
-      ).and_then(
-        |num| {
-          use ::std::str::FromStr ;
-          i32::from_str(num).chain_err(
-            || format!("expected integer, found `{}`", num)
-          )
-        }
-      ).map(
-        |num| if sign.is_none() { num } else { - num }
-      )
+nom::named! {
+    signed_int< Res<i32> >, do_parse!(
+        sign: opt!( char!('-') ) >>
+        spc_cmt >>
+        num: re_bytes_find!( r"^[0-9][0-9]*" ) >> (
+        from_utf8(num).chain_err(
+            || format!("non utf8 string during signed int parsing")
+        ).and_then(
+            |num| {
+            use ::std::str::FromStr ;
+            i32::from_str(num).chain_err(
+                || format!("expected integer, found `{}`", num)
+            )
+            }
+        ).map(
+            |num| if sign.is_none() { num } else { - num }
+        )
+        )
     )
-  )
 }
-
-
-
 
 /// Parses a validator conf.
-fn validator_conf(bytes: & [u8]) -> IResult< & [u8], Res<ValdConf> > {
-  let mut vald_conf = Ok( ValdConf::empty() ) ;
-  map!(
-    bytes,
-    opt!(
-      do_parse!(
-        tag!(dump::vald_conf_key) >>
-        spc_cmt >>
-        char!('{') >>
-        spc_cmt >>
-        many0!(
-          do_parse!(
-            tag!(dump::vald_conf_suc_key) >>
-            spc_cmt >>
-            char!(':') >>
-            spc_cmt >>
-            code: signed_int >>
-            spc_cmt >>
-            char!(',') >>
-            spc_cmt >>
-            alias: ident >>
-            spc_cmt >>
-            char!(',') >>
-            spc_cmt >>
-            desc: string >>
-            spc_cmt >> (
-              match code {
-                Ok(code) => {
-                  vald_conf = vald_conf.and_then(
-                    |conf| conf.add_succ(
-                      code, ValdCode { alias, desc, color: None }
-                    )
-                  )
-                },
-                Err(e) => vald_conf = Err(e),
-              }
-            )
-          )
-        ) >>
-        char!('}') >> (())
-      )
-    ),
-    |_| vald_conf
-  )
+fn validator_conf(bytes: &[u8]) -> IResult<&[u8], Res<ValdConf>> {
+    let mut vald_conf = Ok(ValdConf::empty());
+    map!(
+        bytes,
+        opt!(do_parse!(
+            tag!(dump::vald_conf_key)
+                >> spc_cmt
+                >> char!('{')
+                >> spc_cmt
+                >> many0!(do_parse!(
+                    tag!(dump::vald_conf_suc_key)
+                        >> spc_cmt
+                        >> char!(':')
+                        >> spc_cmt
+                        >> code: signed_int
+                        >> spc_cmt
+                        >> char!(',')
+                        >> spc_cmt
+                        >> alias: ident
+                        >> spc_cmt
+                        >> char!(',')
+                        >> spc_cmt
+                        >> desc: string
+                        >> spc_cmt
+                        >> (match code {
+                            Ok(code) => {
+                                vald_conf = vald_conf.and_then(|conf| {
+                                    conf.add_succ(
+                                        code,
+                                        ValdCode {
+                                            alias,
+                                            desc,
+                                            color: None,
+                                        },
+                                    )
+                                })
+                            }
+                            Err(e) => vald_conf = Err(e),
+                        })
+                ))
+                >> char!('}')
+                >> (())
+        )),
+        |_| vald_conf
+    )
 }
-
 
 /// Parses a tool conf field.
 fn tool_conf_field<'a, 'b>(
-  bytes: & 'a [u8], builder: & 'b mut ToolConfBuilder
-) -> IResult< & 'a [u8], Res<()> > {
-  alt_complete!(
-    bytes,
-
-    do_parse!(
-      tag!(dump::short_name_key) >>
-      spc_cmt >>
-      char!(':') >>
-      spc_cmt >>
-      short: ident >> (
-        builder.set_short( short )
-      )
-    ) |
-
-    do_parse!(
-      tag!(dump::cmd_key) >>
-      spc_cmt >>
-      char!(':') >>
-      spc_cmt >>
-      cmd: quoted_string >> ({
-        let cmd = {
-          let mut iter = cmd.into_iter() ;
-          if let Some(mut s) = iter.next() {
-            for next in iter {
-              s = format!("{} {}", s, next)
-            }
-            vec![s]
-          } else {
-            vec![]
-          }
-        } ;
-        builder.set_cmd(cmd)
-      })
-    ) |
-
-    do_parse!(
-      tag!(dump::graph_name_key) >>
-      spc_cmt >>
-      char!(':') >>
-      spc_cmt >>
-      graph: string >> (
-        builder.set_graph( graph )
-      )
-    ) |
-
-    do_parse!(
-      tag!(dump::vald_key) >>
-      spc_cmt >>
-      char!(':') >>
-      spc_cmt >>
-      validator: raw_string >> (
-        builder.set_validator( validator )
-      )
+    bytes: &'a [u8],
+    builder: &'b mut ToolConfBuilder,
+) -> IResult<&'a [u8], Res<()>> {
+    alt_complete!(
+        bytes,
+        do_parse!(
+            tag!(dump::short_name_key)
+                >> spc_cmt
+                >> char!(':')
+                >> spc_cmt
+                >> short: ident
+                >> (builder.set_short(short))
+        ) | do_parse!(
+            tag!(dump::cmd_key)
+                >> spc_cmt
+                >> char!(':')
+                >> spc_cmt
+                >> cmd: quoted_string
+                >> ({
+                    let cmd = {
+                        let mut iter = cmd.into_iter();
+                        if let Some(mut s) = iter.next() {
+                            for next in iter {
+                                s = format!("{} {}", s, next)
+                            }
+                            vec![s]
+                        } else {
+                            vec![]
+                        }
+                    };
+                    builder.set_cmd(cmd)
+                })
+        ) | do_parse!(
+            tag!(dump::graph_name_key)
+                >> spc_cmt
+                >> char!(':')
+                >> spc_cmt
+                >> graph: string
+                >> (builder.set_graph(graph))
+        ) | do_parse!(
+            tag!(dump::vald_key)
+                >> spc_cmt
+                >> char!(':')
+                >> spc_cmt
+                >> validator: raw_string
+                >> (builder.set_validator(validator))
+        )
     )
-
-  )
 }
 
 /// Parses a tool configuration.
-fn tool_conf<'a>(bytes: & 'a [u8]) -> IResult< & 'a [u8], Res<ToolConf> > {
-  let mut builder = None ;
-  do_parse!(
-    bytes,
-    map!(
-      string, |name: String| builder = Some(
-        ToolConfBuilder::of_name(name)
-      )
-    ) >>
-    spc_cmt >>
-    char!('{') >>
-    spc_cmt >>
-    many0!(
-      terminated!(
-        apply!(
-          tool_conf_field, builder.as_mut().unwrap()
-        ),
-        spc_cmt
-      )
-    ) >>
-    char!('}') >> (
-      builder.unwrap().to_conf()
+fn tool_conf<'a>(bytes: &'a [u8]) -> IResult<&'a [u8], Res<ToolConf>> {
+    let mut builder = None;
+    do_parse!(
+        bytes,
+        map!(string, |name: String| builder =
+            Some(ToolConfBuilder::of_name(name)))
+            >> spc_cmt
+            >> char!('{')
+            >> spc_cmt
+            >> many0!(terminated!(
+                apply!(tool_conf_field, builder.as_mut().unwrap()),
+                spc_cmt
+            ))
+            >> char!('}')
+            >> (builder.unwrap().to_conf())
     )
-  )
 }
 
 /// Parses several tool configurations.
 fn tool_confs<'a>(
-  bytes: & 'a [u8]
-) -> IResult<
-  & 'a [u8], ( Vec<String>, Res<ValdConf>, Vec<Res<ToolConf>> )
-> {
-  do_parse!(
-    bytes,
-    spc_cmt >>
-    opts: opt!(options) >>
-    spc_cmt >>
-    vald_conf: validator_conf >>
-    spc_cmt >>
-    vec: many1!(
-      terminated!(tool_conf, spc_cmt)
-    ) >> (
-      ( opts.unwrap_or(vec![]), vald_conf, vec )
+    bytes: &'a [u8],
+) -> IResult<&'a [u8], (Vec<String>, Res<ValdConf>, Vec<Res<ToolConf>>)> {
+    do_parse!(
+        bytes,
+        spc_cmt
+            >> opts: opt!(options)
+            >> spc_cmt
+            >> vald_conf: validator_conf
+            >> spc_cmt
+            >> vec: many1!(terminated!(tool_conf, spc_cmt))
+            >> ((opts.unwrap_or(vec![]), vald_conf, vec))
     )
-  )
 }
 
-
-lazy_static!{
-  static ref cmd_regex: Regex = Regex::new(
-    r"([^\s]*)"
-  ).unwrap() ;
+lazy_static! {
+    static ref cmd_regex: Regex = Regex::new(r"([^\s]*)").unwrap();
 }
 
 /// Parses tool configurations from some bytes.
-pub fn work<'a>(conf: & GConf, bytes: & 'a [u8]) -> Res<
-  ( Vec<String>, ValdConf, Vec< ToolConf > )
-> {
-  match tool_confs(bytes) {
-    IResult::Done(rest, (opts, vald_conf, tools)) => {
-      let vald_conf = vald_conf ? ;
-      if rest.is_empty() {
-        let mut tool_confs = Vec::with_capacity(tools.len()) ;
-        for tool in tools.into_iter() {
-          let mut tool_conf = tool ? ;
-          let cmd = {
-            let mut cmd = vec![] ;
-            assert_eq!(tool_conf.cmd.len(), 1) ;
-            let str_cmd = & tool_conf.cmd[0] ;
-            let mut iter = cmd_regex.find_iter(str_cmd) ;
-            if let Some(first) = iter.next() {
-              cmd.push( first.as_str().to_string() ) ;
-              for next in iter {
-                cmd.push( next.as_str().to_string() )
-              }
+pub fn work<'a>(conf: &GConf, bytes: &'a [u8]) -> Res<(Vec<String>, ValdConf, Vec<ToolConf>)> {
+    match tool_confs(bytes) {
+        IResult::Done(rest, (opts, vald_conf, tools)) => {
+            let vald_conf = vald_conf?;
+            if rest.is_empty() {
+                let mut tool_confs = Vec::with_capacity(tools.len());
+                for tool in tools.into_iter() {
+                    let mut tool_conf = tool?;
+                    let cmd = {
+                        let mut cmd = vec![];
+                        assert_eq!(tool_conf.cmd.len(), 1);
+                        let str_cmd = &tool_conf.cmd[0];
+                        let mut iter = cmd_regex.find_iter(str_cmd);
+                        if let Some(first) = iter.next() {
+                            cmd.push(first.as_str().to_string());
+                            for next in iter {
+                                cmd.push(next.as_str().to_string())
+                            }
+                        } else {
+                            bail!(format!(
+                                "command for tool {} is illegal",
+                                conf.emph(&tool_conf.name)
+                            ))
+                        }
+                        cmd
+                    };
+                    tool_conf.cmd = cmd;
+                    tool_confs.push(tool_conf)
+                }
+                Ok((opts, vald_conf, tool_confs))
             } else {
-              bail!(
-                format!(
-                  "command for tool {} is illegal", conf.emph(& tool_conf.name)
-                )
-              )
+                bail!("conf file parse error: could not parse whole file")
             }
-            cmd
-          } ;
-          tool_conf.cmd = cmd ;
-          tool_confs.push(tool_conf)
         }
-        Ok( (opts, vald_conf, tool_confs) )
-      } else {
-        bail!("conf file parse error: could not parse whole file")
-      }
-    },
-    IResult::Error(e) => bail!(
-      format!("conf file parse error: `{:?}`", e)
-    ),
-    IResult::Incomplete(_) => bail!(
-      format!("conf file parse error: incomplete")
-    ),
-  }
+        IResult::Error(e) => bail!(format!("conf file parse error: `{:?}`", e)),
+        IResult::Incomplete(_) => bail!(format!("conf file parse error: incomplete")),
+    }
 }
 
-
-
-
-
-
-named!{
+nom::named! {
   #[doc = "Parses an unsigned integer, accepts sequences of zeros."],
   uint<Res<& str>>, alt_complete!(
     map!(
@@ -562,7 +488,7 @@ named!{
   )
 }
 
-named!{
+nom::named! {
   #[doc = "Parses a duration."],
   duration< Res<Duration> >, do_parse!(
     secs: uint >>
@@ -585,7 +511,7 @@ named!{
   )
 }
 
-named!{
+nom::named! {
   #[doc = "Parses an exit code."],
   code_opt< Res< Option<i32> > >, alt_complete!(
     map!( char!('?'), |_| Ok(None) ) |
@@ -593,7 +519,7 @@ named!{
   )
 }
 
-named!{
+nom::named! {
   #[doc = "Parses a BenchRes."],
   bench_res< Res<(usize, String, BenchRes)> >, do_parse!(
     index: uint >>
@@ -646,98 +572,78 @@ named!{
   )
 }
 
-
-
-
-
 /// Parses a dump file.
 fn parse_dump<'a>(
-  bytes: & 'a [u8], file: String, run_res: & mut RunRes
-) -> IResult<& 'a [u8], Res<ToolRes>> {
-  let mut benchs: HashMap<BenchIndex,_> = HashMap::new() ;
-  do_parse!(
-    bytes,
-    spc_cmt >>
-    tool: tool_conf >>
-    spc_cmt >>
-    vald_conf: validator_conf >>
-    spc_cmt >>
-    tag!(dump::timeout_key) >>
-    spc_cmt >>
-    char!(':') >>
-    spc_cmt >>
-    timeout: duration >>
-    spc_cmt >>
-    bench_lines: many0!(
-      do_parse!(
-        data: bench_res >>
-        spc_cmt >> (
-          data.and_then(
-            |(index, name, res)| run_res.check_bench_index(
-              index.into(), name
-            ).map(
-              |()| (index, res)
-            )
-          ).and_then(
-            |(index, res)| {
-              let prev = benchs.insert(index.into(), res) ;
-              if prev.is_some() {
-                Err(
-                  format!("found 2 benchmarks with index `{}`", index).into()
-                )
-              } else {
-                Ok(())
-              }
-            }
-          )
-        )
-      )
-    ) >> ({
-      let mut res = Ok(()) ;
-      for r in bench_lines {
-        if res.is_err() { break }
-        res = r
-      }
-      res.and_then(
-        |_| timeout.and_then(
-          |timeout| tool.and_then(
-            |tool| vald_conf.map(
-              |vald_conf| ToolRes::mk(
-                tool, timeout, file, benchs, vald_conf
-              )
-            )
-          )
-        )
-      )
-    })
-  )
+    bytes: &'a [u8],
+    file: String,
+    run_res: &mut RunRes,
+) -> IResult<&'a [u8], Res<ToolRes>> {
+    let mut benchs: HashMap<BenchIndex, _> = HashMap::new();
+    do_parse!(
+        bytes,
+        spc_cmt
+            >> tool: tool_conf
+            >> spc_cmt
+            >> vald_conf: validator_conf
+            >> spc_cmt
+            >> tag!(dump::timeout_key)
+            >> spc_cmt
+            >> char!(':')
+            >> spc_cmt
+            >> timeout: duration
+            >> spc_cmt
+            >> bench_lines:
+                many0!(do_parse!(
+                    data: bench_res
+                        >> spc_cmt
+                        >> (data
+                            .and_then(|(index, name, res)| run_res
+                                .check_bench_index(index.into(), name)
+                                .map(|()| (index, res)))
+                            .and_then(|(index, res)| {
+                                let prev = benchs.insert(index.into(), res);
+                                if prev.is_some() {
+                                    Err(format!("found 2 benchmarks with index `{}`", index).into())
+                                } else {
+                                    Ok(())
+                                }
+                            }))
+                ))
+            >> ({
+                let mut res = Ok(());
+                for r in bench_lines {
+                    if res.is_err() {
+                        break;
+                    }
+                    res = r
+                }
+                res.and_then(|_| {
+                    timeout.and_then(|timeout| {
+                        tool.and_then(|tool| {
+                            vald_conf.map(|vald_conf| {
+                                ToolRes::mk(tool, timeout, file, benchs, vald_conf)
+                            })
+                        })
+                    })
+                })
+            })
+    )
 }
-
 
 /// Parses a dump file from some bytes.
-pub fn dump(
-  bytes: & [u8], file: String, run_res: & mut RunRes
-) -> Res<ToolRes> {
-  match parse_dump(bytes, file, run_res) {
-    IResult::Done(rest, tool_res) => {
-      if rest.is_empty() {
-        tool_res
-      } else {
-        bail!(
-          format!(
-            "dump parse error: could not parse whole file: `{}`",
-            String::from_utf8_lossy(rest)
-          )
-        )
-      }
-    },
-    IResult::Error(e) => bail!(
-      format!("dump parse error: `{:?}`", e)
-    ),
-    IResult::Incomplete(_) => bail!(
-      format!("dump parse error: incomplete")
-    ),
-  }
+pub fn dump(bytes: &[u8], file: String, run_res: &mut RunRes) -> Res<ToolRes> {
+    match parse_dump(bytes, file, run_res) {
+        IResult::Done(rest, tool_res) => {
+            if rest.is_empty() {
+                tool_res
+            } else {
+                bail!(format!(
+                    "dump parse error: could not parse whole file: `{}`",
+                    String::from_utf8_lossy(rest)
+                ))
+            }
+        }
+        IResult::Error(e) => bail!(format!("dump parse error: `{:?}`", e)),
+        IResult::Incomplete(_) => bail!(format!("dump parse error: incomplete")),
+    }
 }
-
-

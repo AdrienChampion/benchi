@@ -1,8 +1,11 @@
 //! Constants.
+
+prelude!();
+
 /// Validator constants.
 pub mod validator {
-  /// Prefix added to validator scripts.
-  pub static pref: & str = "\
+    /// Prefix added to validator scripts.
+    pub static pref: &str = "\
 #!/bin/bash
 bench=\"$1\"
 code=\"$2\"
@@ -10,123 +13,120 @@ out=\"$3\"
 err=\"$4\"
 
 \
-  " ;
+  ";
 }
 
 /// Clap-related constants.
 pub mod clap {
-  use regex::Regex ;
+    prelude!();
 
-  /// Format for the timeout.
-  pub static tmo_format: & str = "[int]s|[int]min" ;
-  /// Format for booleans.
-  pub static bool_format: & str = "on|true|off|false" ;
+    use regex::Regex;
 
-  #[test]
-  fn regexes() {
-    let tmo_res = tmo_regex.captures("720s").unwrap() ;
-    assert_eq!( & tmo_res["value"], "720" ) ;
-    assert_eq!( & tmo_res["unit"], "s" ) ;
+    /// Format for the timeout.
+    pub static tmo_format: &str = "[int]s|[int]min";
+    /// Format for booleans.
+    pub static bool_format: &str = "on|true|off|false";
 
-    let tmo_res = tmo_regex.captures("3min").unwrap() ;
-    assert_eq!( & tmo_res["value"], "3" ) ;
-    assert_eq!( & tmo_res["unit"], "min" ) ;
+    #[test]
+    fn regexes() {
+        let tmo_res = tmo_regex.captures("720s").unwrap();
+        assert_eq!(&tmo_res["value"], "720");
+        assert_eq!(&tmo_res["unit"], "s");
 
-    assert!( ! tmo_regex.is_match("720") ) ;
-    assert!( ! tmo_regex.is_match("720 s") ) ;
-    assert!( ! tmo_regex.is_match("s720") ) ;
-    assert!( ! tmo_regex.is_match("s 720") ) ;
-    assert!( ! tmo_regex.is_match("s") ) ;
-    assert!( ! tmo_regex.is_match("720 min") ) ;
-    assert!( ! tmo_regex.is_match("min720") ) ;
-    assert!( ! tmo_regex.is_match("min 720") ) ;
-    assert!( ! tmo_regex.is_match("min") ) ;
-    assert!( ! tmo_regex.is_match("") ) ;
-  }
+        let tmo_res = tmo_regex.captures("3min").unwrap();
+        assert_eq!(&tmo_res["value"], "3");
+        assert_eq!(&tmo_res["unit"], "min");
 
-  lazy_static!{
-    #[doc = "
+        assert!(!tmo_regex.is_match("720"));
+        assert!(!tmo_regex.is_match("720 s"));
+        assert!(!tmo_regex.is_match("s720"));
+        assert!(!tmo_regex.is_match("s 720"));
+        assert!(!tmo_regex.is_match("s"));
+        assert!(!tmo_regex.is_match("720 min"));
+        assert!(!tmo_regex.is_match("min720"));
+        assert!(!tmo_regex.is_match("min 720"));
+        assert!(!tmo_regex.is_match("min"));
+        assert!(!tmo_regex.is_match(""));
+    }
+
+    lazy_static! {
+      #[doc = "
 Regex for timeout in clap. Two groups: `value` (int) and `unit` (`min` or `s`).
     "]
-    pub static ref tmo_regex: Regex = Regex::new(
-      r"^(?P<value>\d\d*)(?P<unit>min|s)$"
-    ).unwrap() ;
-  }
+      pub static ref tmo_regex: Regex = Regex::new(
+        r"^(?P<value>\d\d*)(?P<unit>min|s)$"
+      ).unwrap() ;
+    }
 }
 
 /// Substitutions in user-provided data.
 pub mod subst {
-  use regex::Regex ;
+    prelude!();
+    use regex::Regex;
 
-  /// Today keyword. **Update CLAP help if you change this.**
-  pub static today: & str = "<today>" ;
-  /// Now keyword. **Update CLAP help if you change this.**
-  pub static now: & str = "<now>" ;
-  /// Timeout keyword. **Update CLAP help if you change this.**
-  pub static timeout: & str = "<timeout>" ;
+    /// Today keyword. **Update CLAP help if you change this.**
+    pub static today: &str = "<today>";
+    /// Now keyword. **Update CLAP help if you change this.**
+    pub static now: &str = "<now>";
+    /// Timeout keyword. **Update CLAP help if you change this.**
+    pub static timeout: &str = "<timeout>";
 
-  #[test]
-  fn regexes() {
-    let today_res = today_re.replace_all(
-      "blah<today> <today> <today>foo", "date"
-    ) ;
-    assert_eq!( today_res, "blahdate date datefoo" ) ;
-    let now_res = now_re.replace_all(
-      "blah<now> <now> <now>foo", "time"
-    ) ;
-    assert_eq!( now_res, "blahtime time timefoo" ) ;
-    let timeout_res = timeout_re.replace_all(
-      "blah<timeout> <timeout> <timeout>foo", "tmo"
-    ) ;
-    assert_eq!( timeout_res, "blahtmo tmo tmofoo" )
-  }
+    #[test]
+    fn regexes() {
+        let today_res = today_re.replace_all("blah<today> <today> <today>foo", "date");
+        assert_eq!(today_res, "blahdate date datefoo");
+        let now_res = now_re.replace_all("blah<now> <now> <now>foo", "time");
+        assert_eq!(now_res, "blahtime time timefoo");
+        let timeout_res = timeout_re.replace_all("blah<timeout> <timeout> <timeout>foo", "tmo");
+        assert_eq!(timeout_res, "blahtmo tmo tmofoo")
+    }
 
-  lazy_static!{
-    #[doc = "Matches the `today` keyword."]
-    pub static ref today_re: Regex = Regex::new(today).expect(
-      "problem in `today` static regex"
-    ) ;
-    #[doc = "Matches the `now` keyword."]
-    pub static ref now_re: Regex = Regex::new(now).expect(
-      "problem in `now` static regex"
-    ) ;
-    #[doc = "Matches the `timeout` keyword."]
-    pub static ref timeout_re: Regex = Regex::new(timeout).expect(
-      "problem in `timeout` static regex"
-    ) ;
-  }
+    lazy_static! {
+      #[doc = "Matches the `today` keyword."]
+      pub static ref today_re: Regex = Regex::new(today).expect(
+        "problem in `today` static regex"
+      ) ;
+      #[doc = "Matches the `now` keyword."]
+      pub static ref now_re: Regex = Regex::new(now).expect(
+        "problem in `now` static regex"
+      ) ;
+      #[doc = "Matches the `timeout` keyword."]
+      pub static ref timeout_re: Regex = Regex::new(timeout).expect(
+        "problem in `timeout` static regex"
+      ) ;
+    }
 }
 
 /// Bench data dumping.
 pub mod dump {
-  /// Comment prefix.
-  pub static cmt_pref: & str = "#" ;
-  #[doc = "Key for short names."]
-  pub static short_name_key: & str = "short" ;
-  #[doc = "Key for graph names."]
-  pub static graph_name_key: & str = "graph" ;
-  #[doc = "Key for commands."]
-  pub static cmd_key: & str = "cmd" ;
-  #[doc = "Key for timeouts."]
-  pub static timeout_key: & str = "timeout" ;
-  #[doc = "Key for the validator."]
-  pub static vald_key: & str = "validator" ;
-  #[doc = "Key for validator conf."]
-  pub static vald_conf_key: & str = "validators" ;
-  #[doc = "Key for validator conf success codes."]
-  pub static vald_conf_suc_key: & str = "success" ;
+    /// Comment prefix.
+    pub static cmt_pref: &str = "#";
+    #[doc = "Key for short names."]
+    pub static short_name_key: &str = "short";
+    #[doc = "Key for graph names."]
+    pub static graph_name_key: &str = "graph";
+    #[doc = "Key for commands."]
+    pub static cmd_key: &str = "cmd";
+    #[doc = "Key for timeouts."]
+    pub static timeout_key: &str = "timeout";
+    #[doc = "Key for the validator."]
+    pub static vald_key: &str = "validator";
+    #[doc = "Key for validator conf."]
+    pub static vald_conf_key: &str = "validators";
+    #[doc = "Key for validator conf success codes."]
+    pub static vald_conf_suc_key: &str = "success";
 }
 
 /// Data-related regexs
 pub mod data {
-  #[doc = "Indicates a timeout result."]
-  pub static timeout_res: & str = "timeout" ;
-  #[doc = "Indicates an error result."]
-  pub static error_res: & str = "error" ;
+    #[doc = "Indicates a timeout result."]
+    pub static timeout_res: &str = "timeout";
+    #[doc = "Indicates an error result."]
+    pub static error_res: &str = "error";
 }
 
 /// Example configuration file.
-pub static ex_conf_file: & str = r#"# Example configuration file.
+pub static ex_conf_file: &str = r#"# Example configuration file.
 
 # Run `benchi help conf` for further details.
 
@@ -241,11 +241,10 @@ done < $out
 exit $code
   ```
 }
-"# ;
-
+"#;
 
 /// Example benchmark file.
-pub static ex_bench_file: & str = r#"[aA]*
+pub static ex_bench_file: &str = r#"[aA]*
 [bB]*
 [cC]*
 [dD]*
@@ -270,4 +269,4 @@ pub static ex_bench_file: & str = r#"[aA]*
 [wW]*
 [xX]*
 [yY]*
-[zZ]*"# ;
+[zZ]*"#;

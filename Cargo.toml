@@ -2,11 +2,12 @@
 name = "benchi"
 version = "0.2.0"
 authors = ["Adrien Champion <adrien.champion@email.com>"]
+edition = "2018"
 
 [dependencies]
 rayon = "*"
 chrono = "*"
-clap = "*"
+clap_lib = { package = "clap", version = "*", features = ["cargo"] }
 ansi_term = "*"
 pbr = "*"
 regex = "*"

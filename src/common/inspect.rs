@@ -1,11 +1,10 @@
 //! Inspection basic types and helpers.
 
+use clap_lib::*;
 
 /// The inspection subcommand.
-pub fn inspect_subcommand<'a, 'b>() -> ::clap_lib::App<'a, 'b> {
-  use clap_lib::* ;
-
-  SubCommand::with_name("inspect").about(
-    "Interactive data inspection. (UNIMPLEMENTED)"
-  ).about("UNIMPLEMENTED")
+pub fn inspect_subcommand<'a>() -> Command<'a> {
+    Command::new("inspect")
+        .about("Interactive data inspection. (UNIMPLEMENTED)")
+        .about("UNIMPLEMENTED")
 }
